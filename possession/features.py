@@ -70,11 +70,45 @@ def _single_source_speed(bx, by, source=None, half=2):
     return np.where(source[a] == source[b], speed, np.nan)
 
 
+def keeper_teams(px, team, gk, pitch, attack_first_half, game=GAME):
+    """Per-frame team of every slot: the metadata team, except for goalkeeper slots.
+
+    The tracker files a goalkeeper under a goalkeeper slot by where he stands rather than by
+    which side he plays for, so a slot labelled for one team spends long stretches holding the
+    other team's keeper -- confirmed on the video, where the two keepers wear different greens.
+    A goalkeeper defends his own goal, so a goalkeeper slot is credited, frame by frame, to the
+    side whose goal is nearer, using each side's attacking direction (swapped at halftime).
+    """
+    n_frames, n_slots = px.shape
+    out = np.broadcast_to(team, (n_frames, n_slots)).copy()
+    if not gk.any():
+        return out
+    length = pitch[0]
+    home_left = attack_first_half.get(0) == "left_to_right"
+    halves = half_video_blocks(game)
+    second = np.zeros(n_frames, dtype=bool)
+    if len(halves) > 1:
+        second[halves[1][1]:] = True
+    home_goal_left = np.where(second, not home_left, home_left)           # per frame
+    for slot in np.flatnonzero(gk):
+        x = px[:, slot]
+        left = np.nan_to_num(x, nan=length) < length / 2
+        keeper_is_home = left == home_goal_left
+        out[:, slot] = np.where(np.isfinite(x), np.where(keeper_is_home, 0, 1), team[slot])
+    return out
+
+
 def contact_distances(px, py, bx, by, team):
-    """(d_home, d_away): distance from the ball to the nearest tracked player of each team."""
+    """(d_home, d_away): distance from the ball to the nearest tracked player of each team.
+
+    team is per slot, or per frame and slot (see keeper_teams).
+    """
     dist = np.hypot(px - bx[:, None], py - by[:, None])
     dist = np.where(np.isfinite(dist), dist, np.inf)
-    return dist[:, team == 0].min(axis=1), dist[:, team == 1].min(axis=1)
+    if team.ndim == 1:
+        return dist[:, team == 0].min(axis=1), dist[:, team == 1].min(axis=1)
+    return (np.where(team == 0, dist, np.inf).min(axis=1),
+            np.where(team == 1, dist, np.inf).min(axis=1))
 
 
 def outside_margin(bx, by, pitch):
@@ -118,6 +152,8 @@ def build(data, events=None):
     n = len(bx)
     vis = np.isfinite(bx)
 
+    if "gk" in data and "attack_first_half" in data:
+        team = keeper_teams(px, team, data["gk"], data["pitch"], data["attack_first_half"])
     d_home, d_away = contact_distances(px, py, bx, by, team)
     speed = np.nanmean(np.where(np.isfinite(ps), ps, np.nan), axis=1)
     speed = np.where(np.isfinite(px).sum(axis=1) > 0, speed, np.nan)

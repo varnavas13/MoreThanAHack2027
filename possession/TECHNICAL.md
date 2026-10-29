@@ -20,7 +20,9 @@ Two rules from the Laws of the Game are imposed as hard constraints: no half is 
 its kick-off, which is taken from the centre mark (Law 8), and a ball that has left the pitch is
 out of play (Law 9). The tagged side of a set piece takes the restart (soft evidence). The
 broadcast recording, aligned to the tactical timeline from the tracking alone, supplies a second
-ball track for the possession model.
+ball track for the possession model. Goalkeeper slots, which the tracker fills by position rather
+than by team, are credited to the side whose goal they stand in — a fix found by overlaying the
+tracking on the video and verified there against the keepers' kits.
 
 No hand labels, no external labelled data, no ground truth was used to fit or choose anything.
 
@@ -52,8 +54,9 @@ are interpretable — which matters when they cannot be tuned against labels.
 | ATD metadata | **yes** | slot → team; no player identities are needed or used |
 | Smart Tagging `SET PIECES` | **yes**, as evidence | inside-a-set-piece-window feature; kick-off windows for Law 8 |
 | Smart Tagging phase codes | no | the defending codes mirror the attacking ones exactly (same counts and durations), and phases are not possessions; the team evidence from tracking is far denser |
-| homography | no | only needed for video work, which this does not do |
-| videos | no | — |
+| homography | for validation | projects tracked players into the video for the kit check (§4.6) |
+| tactical video | for validation only | the kit check (§4.6, `kit_check.py`); the pipeline never reads it |
+| broadcast video | no | — |
 | broadcast ATD | **yes**, for the team model | aligned to the tactical timeline from the tracking alone (§4.5); its ball fills frames the tactical camera misses |
 
 Speeds in the ATD are already in m/s despite the XML saying kph (verified: the speed derived
@@ -141,10 +144,10 @@ sides' probabilities still sum to one, so this evidence decides **who** restarts
 player stood on a dead ball, and invented sub-second "restarts" inside stoppages.
 
 It acts on the restart only: if the other side then gains sustained control, possession still
-changes. Restarts whose decoded side contradicts the taker fell from 21 to 14 of 98. The decoded
-side agrees with the tag on 19 of 24; four of the five others are corners after which the
-defending side then holds the ball for 5–17 s, i.e. a clearance kept, where skipping a ~1 s
-attacking spell costs little.
+changes. Restarts whose decoded side contradicts the taker fell from 21 to 14 of 98 (and to 10 with the
+goalkeeper fix of §4.6). The decoded side agrees with the tag on 20 of 24; most of the others
+are corners after which the defending side then holds the ball for 5–17 s, i.e. a clearance
+kept, where skipping a ~1 s attacking spell costs little.
 
 The last-touch rule (Law 9: the restart goes to the opponents of the last player to touch the
 ball) was tried as further evidence and **dropped**: the nearest player at the moment the ball
@@ -176,7 +179,30 @@ Phase-team agreement (§7) went 0.699 → 0.703 with the ball and → 0.706 with
 signal in itself, and the broadcast sees the ball through stoppages the wide camera loses it in.
 Using it there too (tested) changed twice as many frames with no measurable gain.
 
-### 4.6 Tried and dropped
+### 4.6 Goalkeeper slots, and what the video says
+
+Overlaying the tracking on the tactical video (homography projection) showed the tracker filing
+a goalkeeper under a goalkeeper *slot* by where he stands rather than which side he plays for:
+the slot labelled Athletic spends 10–13 % of its time at Barcelona's goal, in runs of up to
+230 s, and the Barcelona slot does the mirror error less often — 953 ball contacts credited to
+the wrong side at full weight, goal kicks included.
+
+The fix needs no video: **a goalkeeper defends his own goal**, so each goalkeeper slot is
+credited, frame by frame, to the side whose goal is nearer, using each side's attacking direction
+from the metadata (swapped at halftime) — `features.keeper_teams`, applied to both trackers.
+
+Measured on the video with `kit_check.py`: the two keepers wear different greens (lime and
+teal; grass never reaches the teal hue), and the outfield kits are dark and white. On 120 random
+frames with a keeper on the ball, the metadata team matches his kit **78 %** of the time, the
+corrected team **97.5 %** (on 60 frames where the two labellings disagree: corrected right 58,
+metadata right 2). Outfield slots match their kit 98.3 % of the time, so there is no comparable
+error to fix there and the pipeline does not read the video at all.
+
+Effect: restarts whose decoded side contradicts the taker fell 14 → 10 of 96; restart side vs
+tag 19 → 20 of 24. Phase-team agreement *fell* 0.704 → 0.682 — see §7 for why that check
+cannot judge this change.
+
+### 4.7 Tried and dropped
 
 Each was measured on the ground-truth-free checks of §7 at the same possession prior, and
 dropped for making no difference or making things worse:
@@ -189,6 +215,9 @@ dropped for making no difference or making things worse:
 * **Last-touch rule for the restart side** — the nearest player at the exit agreed with the tag
   on 3 of 5 checkable exits.
 * **The broadcast ball in the alive/dead model** — see 4.5.
+* **A per-frame jersey-colour check of every outfield slot on the video** — outfield slots
+  already match their kit 98.3 % of the time (§4.6); the residual is mostly isolated frames the
+  switching penalty absorbs, not worth decoding the video on every run.
 
 ## 5. Possession rules implemented
 
@@ -203,6 +232,7 @@ dropped for making no difference or making things worse:
 | restart | the side named by the tag (corners, goal kicks, free kicks) and by who stands on the ball before it (all restarts), as soft evidence on who restarts |
 | kick-off | not before the half's tagged window; only from the centre mark; done by the window's end |
 | ball over a line | dead (Law 9), until it is back in view — and for corners/goal kicks, back at the spot |
+| goalkeeper on the ball | his touches count for the side whose goal he is in, whatever slot the tracker filed him under |
 | dead-ball ownership | not modelled — the answer is `D`, as the challenge asks |
 | outside the graded halves | `X` |
 
@@ -221,6 +251,11 @@ transitions, §4.1) and a goal-line exit called live (→ the Law 9 constraint, 
 general mechanisms applied over the whole match, and both were judged on the ground-truth-free
 checks of §7, not on the public score.
 
+**How the video was used.** Watched and measured to inspect the tracking, as RULES.md allows —
+never labelled. The goalkeeper rule of §4.6 came from overlaying the tracking on frames; it is a
+general rule (a keeper defends his own goal), not tied to any frame, and its check
+(`kit_check.py`) is an algorithmic colour measurement anyone can rerun.
+
 ## 7. How it was evaluated without ground truth
 
 The public window has 17 possessions; the scorer's own bootstrap puts its `spellF1` noise band
@@ -232,21 +267,26 @@ at ±0.36. It cannot choose between versions. Instead, on the **full match**:
   the ball being untracked at the kick — corners in particular. This is geometry, not tags, so
   it is not circular even though the tagged side is used as evidence (§4.4).
 * **Phase-team agreement.** The share of decoded live frames inside Smart Tagging attacking
-  phases (Build Up, Progression, Ball in Final Third, …) that give the tagged side: **0.704**,
+  phases (Build Up, Progression, Ball in Final Third, …) that give the tagged side: **0.682**,
   against 0.62–0.64 for the baselines. Phases are not possessions, so this is never 1.0, and it
-  rises with smoother decodes (0.676 at a 10 s prior, 0.709 at 14 s) — it is only used to
+  rises with smoother decodes (0.663 at a 10 s prior, 0.704 at 14 s) — it is only used to
   compare variants at the *same* prior, never to choose the prior. (Submissions that use the
   phase tags as input, like a tag-filled vote, score high on it by construction.)
-* **Plausibility.** 286 possessions, mean 12.0 s, 15 shorter than 2 s; 147 stoppages, 45.8 %
-  dead; home share 0.595.
-* **Sensitivity to the one prior** (`--mean-possession`): 10 s → 342 possessions, 12 s → 286
+  **It also inherits the tracking's team errors**: Smart Tagging is generated from the same
+  tracking, so a change that *corrects* team labels can lower it. The goalkeeper fix took it from
+  0.704 to 0.682 while the video shows that fix right 58 times in 60 (§4.6). It is therefore used
+  only for changes that add observations without relabelling anyone (§4.5), and the kit check
+  judges relabelling.
+* **Plausibility.** 288 possessions, mean 12.0 s, 16 shorter than 2 s; 144 stoppages, 45.6 %
+  dead; home share 0.598.
+* **Sensitivity to the one prior** (`--mean-possession`): 10 s → 349 possessions, 12 s → 288
   (shipped), 14 s → 245. The dead-ball model is unaffected; nothing falls off a cliff.
 
 Public window, for wiring only — not a ranking signal:
 
 | | macroF1 | spellF1 | F1 H / A / D | alive/dead F1 | possessions (truth 17) |
 |---|---|---|---|---|---|
-| this model | 0.831 | 0.485 | 0.831 / 0.826 / 0.834 | 0.963 | 16 |
+| this model | 0.838 | 0.461 | 0.848 / 0.833 / 0.834 | 0.963 | 16 |
 | baseline_smooth50 | 0.621 | 0.326 | 0.778 / 0.762 / 0.323 | 0.899 | 26 |
 
 The public `spellF1` of successive versions moved between 0.40 and 0.48 for changes that left
@@ -259,13 +299,13 @@ next change happened to recover it. Neither move was a reason for anything.
 
 * **Short possessions** (< ~2 s) are mostly missed — the price of not inventing spurious ones.
 * **Identity switches across teams** in the tracking produce confident wrong contact evidence.
-  A second tracker does not arbitrate them (§4.6). *Fix:* jersey-colour check of each slot on
-  the tactical video.
+  The large, systematic case — goalkeeper slots — is fixed (§4.6); outfield slots still carry
+  a ~1.7 % residual that a second tracker cannot arbitrate (§4.7).
 * **The ball is untracked at many restarts** (corners, kick-offs), so restart timing falls back
   on collective acceleration; the broadcast adds a ball around 811 restart frames but, being a
   TV feed, often cuts away exactly then.
 * **Restart side** is unknown when nobody is tracked near the ball before the restart and the
-  set piece is untagged — 35 of 145 restarts — and then comes only from post-restart contact.
+  set piece is untagged — 34 of 142 restarts — and then comes only from post-restart contact.
 * **Kick-offs after goals** are slow and often untracked. Law 8 now forces the restart inside
   the tag window, but in two of the four the decoder then calls a second stoppage ~10 s later,
   with the ball still unseen and play slow.
@@ -283,6 +323,10 @@ python possession/run.py --name <team_name>            # ~2.5 min cold; writes e
 python evaluation/validate_submission.py evaluation/results/<team_name>.csv
 python possession/run.py --name <team_name> --check    # optional: public 5-minute wiring check
 python possession/run.py --name <team_name> --no-broadcast   # tactical tracking only
+
+# optional, validation only: the kit check of §4.6 (needs the tactical video and OpenCV)
+pip install opencv-python-headless==5.0.0.93
+python possession/kit_check.py                     # or --video path/to/BAR-ATH_tactical.mp4
 ```
 
 Deterministic: no randomness anywhere, and two runs from a cold cache give byte-identical files.
@@ -298,5 +342,6 @@ reproduces the same file.
 | `possession/deadball.py` | alive/dead model, hard EM, event bonuses |
 | `possession/model.py` | three-state model, self-trained proximity evidence, calibration, Laws 8–9, set-piece priors |
 | `possession/broadcast.py` | broadcast ↔ tactical alignment from the tracking; second ball track |
+| `possession/kit_check.py` | optional: team labels vs jersey colours on the video (validation only) |
 | `possession/diagnostics.py` | ground-truth-free checks |
 | `possession/run.py` | the one command |

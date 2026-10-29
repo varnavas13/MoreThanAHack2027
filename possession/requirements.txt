@@ -2,3 +2,5 @@
 # numpy and pandas only -- nothing else is imported.
 numpy==2.4.6
 pandas==3.1.0
+# Optional, only for possession/kit_check.py (validation on the video, not used by the pipeline):
+# opencv-python-headless==5.0.0.93

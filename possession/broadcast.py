@@ -195,6 +195,7 @@ def fuse(tactical, broadcast, halves, cache_path=None, verbose=True):
     fused["py"] = np.concatenate([tactical["py"], ey], axis=1)
     fused["ps"] = np.concatenate([tactical["ps"], np.full_like(ex, np.nan)], axis=1)
     fused["team"] = np.concatenate([tactical["team"], broadcast["team"]])
+    fused["gk"] = np.concatenate([tactical["gk"], broadcast["gk"]])
     if verbose:
         print("  broadcast verified on {:.1%} of frames; ball added on {} frames, {} player "
               "observations the tactical tracker missed".format(
