@@ -23,9 +23,8 @@ import pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from games import GAME, GAMES, DATA_DIR, require, source_frames  # noqa: E402
+from games import GAME, GAMES, DATA_DIR, DEFAULT_SOURCE, require, source_frames  # noqa: E402
 
-N_SLOTS = 46
 CACHE_VERSION = 1
 
 
@@ -61,23 +60,23 @@ def attack_directions(meta_path):
     return out
 
 
-def _parse(raw_path, n_frames, pitch):
+def _parse(raw_path, n_frames, pitch, n_slots):
     with open(raw_path, "rb") as handle:
         blob = handle.read().replace(b":", b",").replace(b";", b",")
     table = pd.read_csv(io.BytesIO(blob), header=None, dtype=np.float64,
                         na_values=["NaN"], engine="c").values
     del blob
-    if table.shape[1] != 1 + N_SLOTS * 3 + 3:
+    if table.shape[1] != 1 + n_slots * 3 + 3:
         raise ValueError("unexpected column count {}".format(table.shape[1]))
 
     frame = table[:, 0].astype(np.int64) - 1          # frame_id counts from 1
     length, width = pitch
-    players = table[:, 1:1 + N_SLOTS * 3].reshape(-1, N_SLOTS, 3)
-    ball = table[:, 1 + N_SLOTS * 3:]
+    players = table[:, 1:1 + n_slots * 3].reshape(-1, n_slots, 3)
+    ball = table[:, 1 + n_slots * 3:]
 
-    px = np.full((n_frames, N_SLOTS), np.nan, np.float32)
-    py = np.full((n_frames, N_SLOTS), np.nan, np.float32)
-    ps = np.full((n_frames, N_SLOTS), np.nan, np.float32)
+    px = np.full((n_frames, n_slots), np.nan, np.float32)
+    py = np.full((n_frames, n_slots), np.nan, np.float32)
+    ps = np.full((n_frames, n_slots), np.nan, np.float32)
     bx = np.full(n_frames, np.nan, np.float32)
     by = np.full(n_frames, np.nan, np.float32)
     px[frame] = players[:, :, 0] * length
@@ -88,25 +87,30 @@ def _parse(raw_path, n_frames, pitch):
     return px, py, ps, bx, by
 
 
-def load(game=GAME, data_dir=None, cache=True):
-    """dict with px, py, ps (frames x slots), bx, by (frames), team, gk, pitch."""
-    meta_path, raw_path = require(["atd_meta", "atd_raw"], game, data_dir)
-    n_frames = source_frames("tactical", game)
+def load(game=GAME, data_dir=None, cache=True, source=DEFAULT_SOURCE):
+    """dict with px, py, ps (frames x slots), bx, by (frames), team, gk, pitch.
+
+    source="broadcast" loads the TV recording's tracking instead: same format and pitch
+    coordinates, but its own frame index -- NOT aligned to the submission. See broadcast.py.
+    """
+    meta_path, raw_path = require(["atd_meta", "atd_raw"], game, data_dir, source)
+    n_frames = source_frames(source, game)
     pitch = GAMES[game]["pitch"]
+    team = team_of_slots(meta_path)
     cache_path = os.path.join(data_dir or DATA_DIR, "cache",
-                              "{}_tactical_atd_v{}.npz".format(game, CACHE_VERSION))
+                              "{}_{}_atd_v{}.npz".format(game, source, CACHE_VERSION))
 
     if cache and os.path.isfile(cache_path) \
             and os.path.getmtime(cache_path) > os.path.getmtime(raw_path):
         arrays = dict(np.load(cache_path))
     else:
-        px, py, ps, bx, by = _parse(raw_path, n_frames, pitch)
+        px, py, ps, bx, by = _parse(raw_path, n_frames, pitch, len(team))
         arrays = dict(px=px, py=py, ps=ps, bx=bx, by=by)
         if cache:
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
             np.savez(cache_path, **arrays)
 
-    arrays["team"] = team_of_slots(meta_path)
+    arrays["team"] = team
     arrays["gk"] = goalkeeper_slots(meta_path)
     arrays["attack_first_half"] = attack_directions(meta_path)
     arrays["pitch"] = pitch

@@ -17,7 +17,10 @@ penalty; a stoppage lasts at least 2 s. The two kinds of evidence (is the ball a
 near it?) are each **learned from the match itself without any labels**: the alive/dead model
 by hard EM over the full match, the proximity model by self-training on the model's own decode.
 Two rules from the Laws of the Game are imposed as hard constraints: no half is in play before
-its kick-off (Law 8), and a ball that has left the pitch is out of play (Law 9).
+its kick-off, which is taken from the centre mark (Law 8), and a ball that has left the pitch is
+out of play (Law 9). The tagged side of a set piece takes the restart (soft evidence). The
+broadcast recording, aligned to the tactical timeline from the tracking alone, supplies a second
+ball track for the possession model.
 
 No hand labels, no external labelled data, no ground truth was used to fit or choose anything.
 
@@ -51,7 +54,7 @@ are interpretable — which matters when they cannot be tuned against labels.
 | Smart Tagging phase codes | no | the defending codes mirror the attacking ones exactly (same counts and durations), and phases are not possessions; the team evidence from tracking is far denser |
 | homography | no | only needed for video work, which this does not do |
 | videos | no | — |
-| broadcast ATD | no | unsynchronised; see §8 |
+| broadcast ATD | **yes**, for the team model | aligned to the tactical timeline from the tracking alone (§4.5); its ball fills frames the tactical camera misses |
 
 Speeds in the ATD are already in m/s despite the XML saying kph (verified: the speed derived
 from positions matches the raw value 1 : 1).
@@ -110,6 +113,60 @@ nearest the ball, −w/2 to the other, so team evidence never moves the alive/de
   is how a spare ball by the touchline appears), stays > 1 m out for ≥ 5 frames, is dead until
   1 s after it is back in view; over a goal line, until it has been seen at a corner or in a goal
   area (the only places the restart can be taken), capped at 60 s. 33 exits qualify.
+* **Law 8, the centre mark** — inside a kick-off window the restart may only happen with the
+  ball at the centre mark (within 4 m) or unseen, so a ball being rolled back to the spot no
+  longer reads as the kick-off; and a tagged kick-off has happened by the end of its window
+  (dead is ruled out for the 5 s after it). The second-half kick-off now decodes 5 frames from
+  the published one, where it was 55 frames early.
+
+### 4.4 Who restarts
+
+The tag of a corner, goal kick or free kick names the side taking it — confirmed from geometry
+alone: every tagged corner sits at the tagged side's attacking end, every goal kick at its own.
+That side gets a bonus of `log(0.95 / 0.05)` (a tag right ~95 % of the time) on the
+dead → alive transition, from 2 s before the tag window opens to 18 s after (where 90 % of the
+first restarts fall). It acts on the restart only: if the other side then gains sustained
+control the possession still changes, but a header won without control — the usual first touch
+at a corner, where the kicker is often untracked — no longer hands possession over, which is
+the CHALLENGE.md rule. Restart side vs tag went from 15 / 24 to 23 / 24.
+
+The last-touch rule (Law 9: the restart goes to the opponents of the last player to touch the
+ball) was tried as tag-independent evidence and **dropped**: the nearest player at the moment
+the ball leaves the frame agreed with the tag on only 3 of 5 checkable exits.
+
+### 4.5 A second camera — `broadcast.py`
+
+The broadcast recording has its own automatic tracking, in the same pitch coordinates, on its
+own timeline, and no mapping is provided. Matching the broadcast's visible players against every
+tactical frame (chamfer distance over a one-second clip, coarse grid then refined to the frame)
+shows that live TV sits at **one constant offset per half** — +4014 frames in the first,
++26920 in the second. A TV feed plays replays over live time rather than pausing it, so the
+offset never drifts; replay and close-up frames simply fail to match, and every frame is
+verified individually (mean player-to-nearest-player distance under 1.2 m; true matches measure
+0.2–0.9 m, the best wrong frame anywhere ≥ 1.8 m). 47 % of frames verify.
+
+The offsets are confirmed by an independent signal: agreement between the two ball tracks is
+sharpest at exactly these offsets (median 0.74 m), and worsens by ~0.1 m per frame either side.
+
+Use: wherever only the broadcast sees the ball (5,658 frames, a third of the live-play frames
+the tactical camera loses the ball in), its ball feeds the **possession model's** contact
+evidence. The alive/dead model keeps the tactical ball only — for it "the ball is visible" is a
+signal in itself, and the broadcast sees the ball through stoppages the wide camera loses it in.
+Using it there too (tested) changed twice as many frames with no measurable gain.
+
+### 4.6 Tried and dropped
+
+Each was measured on the ground-truth-free checks of §7 at the same possession prior, and
+dropped for making no difference or making things worse:
+
+* **3 s minimum stoppage** (instead of 2 s) — mostly stretched short stoppages to 3 s rather
+  than removing them; phase-team agreement fell 0.703 → 0.695.
+* **Abstaining where the two trackers disagree on the team** of the player nearest the ball
+  (4.7 % of such frames) — inside tagged phases the two trackers are each right about half the
+  time (53 % / 47 %), so neither can arbitrate; agreement 0.703 → 0.700.
+* **Last-touch rule for the restart side** — the nearest player at the exit agreed with the tag
+  on 3 of 5 checkable exits.
+* **The broadcast ball in the alive/dead model** — see 4.5.
 
 ## 5. Possession rules implemented
 
@@ -121,7 +178,9 @@ nearest the ball, −w/2 to the other, so team evidence never moves the alive/de
 | loose or contested ball | small margin → little evidence; possession stays with the last side |
 | ball missing in play | no evidence; possession persists (HMM) |
 | stoppage | dead state; event-gated entry/exit; ≥ 2 s |
-| restart | dead → whichever side's contact evidence follows the restart |
+| restart | dead → the tagged side for corners, goal kicks, free kicks (soft); otherwise whichever side's contact follows |
+| kick-off | not before the half's tagged window; only from the centre mark; done by the window's end |
+| ball over a line | dead (Law 9), until it is back in view — and for corners/goal kicks, back at the spot |
 | dead-ball ownership | not modelled — the answer is `D`, as the challenge asks |
 | outside the graded halves | `X` |
 
@@ -146,36 +205,48 @@ The public window has 17 possessions; the scorer's own bootstrap puts its `spell
 at ±0.36. It cannot choose between versions. Instead, on the **full match**:
 
 * **Restart check.** Every Smart Tagging corner, goal kick, throw-in and kick-off is a restart.
-  Final model: a decoded restart inside **54 / 59** tag windows (throw-ins 26 / 26, corners
-  12 / 12). "In place" (ball seen at the right spot at the restart) is 30 / 59, limited mostly by
-  the ball being untracked at the kick — corners in particular.
-* **Plausibility.** 287 possessions, mean 12.0 s, 12 shorter than 2 s; 144 stoppages, 45.9 %
-  dead; home share 0.605.
-* **Sensitivity to the one prior** (`--mean-possession`): 10 s → 350 possessions, 12 s → 287
-  (shipped), 14 s → 248. The dead-ball model is unaffected; nothing falls off a cliff.
+  Final model: a decoded restart inside **55 / 59** tag windows (throw-ins 26 / 26, corners
+  12 / 12). "In place" (ball seen at the right spot at the restart) is 33 / 59, limited mostly by
+  the ball being untracked at the kick — corners in particular. This is geometry, not tags, so
+  it is not circular even though the tagged side is used as evidence (§4.4).
+* **Phase-team agreement.** The share of decoded live frames inside Smart Tagging attacking
+  phases (Build Up, Progression, Ball in Final Third, …) that give the tagged side: **0.703**,
+  against 0.62–0.64 for the baselines. Phases are not possessions, so this is never 1.0, and it
+  rises with smoother decodes (0.676 at a 10 s prior, 0.722 at 14 s) — it is only used to
+  compare variants at the *same* prior, never to choose the prior. (Submissions that use the
+  phase tags as input, like a tag-filled vote, score high on it by construction.)
+* **Plausibility.** 286 possessions, mean 12.0 s, 19 shorter than 2 s; 148 stoppages, 45.9 %
+  dead; home share 0.601.
+* **Sensitivity to the one prior** (`--mean-possession`): 10 s → 345 possessions, 12 s → 286
+  (shipped), 14 s → 242. The dead-ball model is unaffected; nothing falls off a cliff.
 
 Public window, for wiring only — not a ranking signal:
 
 | | macroF1 | spellF1 | F1 H / A / D | alive/dead F1 | possessions (truth 17) |
 |---|---|---|---|---|---|
-| this model | 0.847 | 0.476 | 0.852 / 0.857 / 0.834 | 0.963 | 20 |
+| this model | 0.838 | 0.400 | 0.847 / 0.832 / 0.834 | 0.963 | 12 |
 | baseline_smooth50 | 0.621 | 0.326 | 0.778 / 0.762 / 0.323 | 0.899 | 26 |
+
+The public `spellF1` of successive versions moved between 0.40 and 0.48 for changes that left
+the full-match checks flat or better — the 17-possession noise the scorer warns about, seen
+first-hand. In this version a 3 s Athletic possession between two long Barcelona ones is merged
+away: the extra broadcast evidence lets the calibration cool the evidence, which is the
+self-consistency rule doing what it says.
 
 ## 8. Limitations, and what to do with more time
 
 * **Short possessions** (< ~2 s) are mostly missed — the price of not inventing spurious ones.
-* **Identity switches across teams** in the tracking produce confident wrong contact evidence;
-  the slots carry a fixed team, so a tracklet that jumps to an opponent is undetectable without
-  the video. *Fix:* jersey-colour check of each slot on the tactical video.
+* **Identity switches across teams** in the tracking produce confident wrong contact evidence.
+  A second tracker does not arbitrate them (§4.6). *Fix:* jersey-colour check of each slot on
+  the tactical video.
 * **The ball is untracked at many restarts** (corners, kick-offs), so restart timing falls back
-  on collective acceleration. *Fix:* the broadcast ATD is a second, independent ball track; it
-  can be synchronised to the tactical timeline by matching player configurations (both are in
-  pitch coordinates), and would fill gaps where the tactical camera loses the ball.
-* **Restart team** comes only from post-restart contact. *Fix:* last-touch rule at the exit
-  (throw-ins, corners, goal kicks go to the opponent of the last toucher) and the tagged team of
-  corners, goal kicks and free kicks.
-* **Kick-offs after goals** are slow and often untracked; one of the four decoded stoppages
-  overruns its kick-off by ~14 s.
+  on collective acceleration; the broadcast adds a ball around 811 restart frames but, being a
+  TV feed, often cuts away exactly then.
+* **Restart side for throw-ins** has no tag (Smart Tagging marks every throw-in `N/A`) and the
+  last-touch estimate was too noisy to use, so it comes only from post-restart contact.
+* **Kick-offs after goals** are slow and often untracked. Law 8 now forces the restart inside
+  the tag window, but in two of the four the decoder then calls a second stoppage ~10 s later,
+  with the ball still unseen and play slow.
 * The possession-length prior (12 s) is the single assumption everything else is calibrated
   to; it comes from football, not from this match, and §7 shows its effect.
 
@@ -186,14 +257,16 @@ Python 3.11. With the data bundle in `data/`:
 
 ```bash
 pip install -r possession/requirements.txt
-python possession/run.py --name <team_name>            # ~80 s; writes evaluation/results/<team_name>.csv
+python possession/run.py --name <team_name>            # ~2.5 min cold; writes evaluation/results/<team_name>.csv
 python evaluation/validate_submission.py evaluation/results/<team_name>.csv
 python possession/run.py --name <team_name> --check    # optional: public 5-minute wiring check
+python possession/run.py --name <team_name> --no-broadcast   # tactical tracking only
 ```
 
 Deterministic: no randomness anywhere, and two runs from a cold cache give byte-identical files.
-The first run caches the parsed tracking under `data/cache/` (gitignored — it is derived from
-the gated data and must not be committed).
+The first run caches the parsed tracking and the broadcast mapping under `data/cache/`
+(gitignored — it is derived from the gated data and must not be committed); deleting the cache
+reproduces the same file.
 
 | file | role |
 |---|---|
@@ -201,6 +274,7 @@ the gated data and must not be committed).
 | `possession/features.py` | per-frame features |
 | `possession/hmm.py` | Viterbi with minimum durations and time-varying penalties (numpy) |
 | `possession/deadball.py` | alive/dead model, hard EM, event bonuses |
-| `possession/model.py` | three-state model, self-trained proximity evidence, calibration, Laws 8–9 |
+| `possession/model.py` | three-state model, self-trained proximity evidence, calibration, Laws 8–9, set-piece priors |
+| `possession/broadcast.py` | broadcast ↔ tactical alignment from the tracking; second ball track |
 | `possession/diagnostics.py` | ground-truth-free checks |
 | `possession/run.py` | the one command |

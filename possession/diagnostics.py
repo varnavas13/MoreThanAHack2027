@@ -79,6 +79,35 @@ def restart_check(f, labels, events, pitch):
     return rows
 
 
+# Smart Tagging phases in which the tagged side is, by definition, the side with the ball. The
+# defending codes are exact mirrors of these (same count, same intervals) and add nothing.
+ATTACKING_PHASES = ("build up", "progression", "ball in final third", "creating chances",
+                    "attacking transition", "ball in the box", "players in the box",
+                    "long ball")
+PHASE_TEAMS = {"barcelona": "H", "atletic club": "A"}
+
+
+def phase_agreement(labels, events):
+    """Share of decoded live frames inside tagged attacking phases that give the tagged side.
+
+    A cross-check of the team call from an independent algorithm (Metrica's tagging). Phases are
+    not possessions -- one can span a turnover -- so this is never 1.0 for a correct model; it
+    is for catching a change that makes the team call clearly worse.
+    """
+    agree = total = 0
+    for event in events:
+        if event["code"].strip().lower() not in ATTACKING_PHASES:
+            continue
+        side = PHASE_TEAMS.get(str(event["tags"].get("Team", "")).strip().lower())
+        if side is None:
+            continue
+        seg = labels[max(0, event["start_frame"]):event["end_frame"]]
+        alive = (seg == "H") | (seg == "A")
+        agree += int(np.sum(seg[alive] == side))
+        total += int(alive.sum())
+    return agree / float(total) if total else 0.0
+
+
 def plausibility(labels, graded):
     lab = labels[graded]
     alive = lab != "D"
@@ -113,10 +142,11 @@ def report(f, labels, events, pitch, name=""):
         by_type[key] = (found + row["found"], placed + row["placed"], n + 1)
     found = sum(r["found"] for r in rows)
     placed = sum(r["placed"] for r in rows)
-    print("{}  restarts found {}/{}  in place {}/{}   |  poss {}  mean {:.1f}s  <2s {}  "
-          "dead spells {}  dead {:.3f}  home {:.3f}".format(
-              name, found, len(rows), placed, len(rows), p["possessions"],
+    phases = phase_agreement(labels, events)
+    print("{}  restarts found {}/{}  in place {}/{}  phase team {:.3f}  |  poss {}  mean {:.1f}s  "
+          "<2s {}  dead spells {}  dead {:.3f}  home {:.3f}".format(
+              name, found, len(rows), placed, len(rows), phases, p["possessions"],
               p["mean_possession_s"], p["short_possessions_lt2s"], p["dead_spells"],
               p["dead_share"], p["home_share"]))
-    return {"restarts": rows, "by_type": by_type, "plausibility": p,
+    return {"restarts": rows, "by_type": by_type, "plausibility": p, "phase_agreement": phases,
             "found": found, "placed": placed, "n_tagged": len(rows)}

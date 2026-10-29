@@ -35,9 +35,11 @@ for path in (HERE, ROOT, os.path.join(ROOT, "starter"), os.path.join(ROOT, "eval
         sys.path.insert(0, path)
 
 import atd  # noqa: E402
+import broadcast  # noqa: E402
 import deadball  # noqa: E402
 import diagnostics  # noqa: E402
 import features  # noqa: E402
+from features import run_lengths  # noqa: E402
 import load_smart_tagging  # noqa: E402
 import model  # noqa: E402
 
@@ -55,12 +57,33 @@ def write_submission(path, labels):
     return path
 
 
-def build_labels(verbose=True, mean_possession_s=model.MEAN_POSSESSION_S):
+def team_features(data, events, f, verbose=True):
+    """Features for the possession model: the tactical ones, with the ball filled in from the
+    broadcast camera wherever only it sees the ball (see broadcast.py). The alive/dead model
+    keeps the tactical-only features -- for it, "the ball is visible" is a signal in itself, and
+    the broadcast sees the ball through stoppages that the wide camera loses it in."""
+    try:
+        other = atd.load(source="broadcast")
+    except IOError:
+        if verbose:
+            print("  no broadcast tracking found -- possession model uses the tactical ball only")
+        return f
+    cache = os.path.join(atd.DATA_DIR, "cache",
+                         "broadcast_map_v{}.npz".format(broadcast.MAP_VERSION))
+    fused = broadcast.fuse(data, other, run_lengths(f["graded"]), cache_path=cache,
+                           verbose=verbose)
+    return features.build(fused, events)
+
+
+def build_labels(verbose=True, mean_possession_s=model.MEAN_POSSESSION_S, use_broadcast=True):
     """The whole pipeline. Returns (labels, features, events, data)."""
     clock = time.time()
     data = atd.load()
     events = load_smart_tagging.load()
     f = features.build(data, events)
+    if verbose:
+        print("aligning the broadcast tracking:" if use_broadcast else "broadcast not used")
+    f_team = team_features(data, events, f, verbose) if use_broadcast else f
     if verbose:
         print("features ready in {:.1f}s".format(time.time() - clock))
         print("alive/dead model (hard EM over the full match):")
@@ -68,7 +91,7 @@ def build_labels(verbose=True, mean_possession_s=model.MEAN_POSSESSION_S):
     if verbose:
         print("possession model (self-trained proximity evidence):")
     priors = model.build_priors(f, events, data["pitch"])
-    states, _, _ = model.fit(f, dead, verbose=verbose, priors=priors,
+    states, _, _ = model.fit(f_team, dead, verbose=verbose, priors=priors,
                              target_s=mean_possession_s)
     labels = model.to_letters(states)
     if verbose:
@@ -99,11 +122,14 @@ def main():
     parser.add_argument("--mean-possession", type=float, default=model.MEAN_POSSESSION_S,
                         help="the possession-length prior, seconds (default %(default)s). A "
                              "football prior, not a fitted value -- see TECHNICAL.md")
+    parser.add_argument("--no-broadcast", action="store_true",
+                        help="ignore the broadcast tracking (tactical ball only)")
     parser.add_argument("--check", action="store_true",
                         help="after writing, score against the public 5 minutes")
     args = parser.parse_args()
 
-    labels, f, events, data = build_labels(mean_possession_s=args.mean_possession)
+    labels, f, events, data = build_labels(mean_possession_s=args.mean_possession,
+                                           use_broadcast=not args.no_broadcast)
     path = write_submission(os.path.join(args.out, args.name + ".csv"), labels)
     digest = hashlib.sha256(open(path, "rb").read()).hexdigest()[:16]
     print("\nwrote {}  (sha256 {}...)".format(os.path.relpath(path, ROOT), digest))

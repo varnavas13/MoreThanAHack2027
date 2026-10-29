@@ -59,6 +59,17 @@ def ball_speed(bx, by, half=2):
     return out
 
 
+def _single_source_speed(bx, by, source=None, half=2):
+    """ball_speed, but NaN wherever its window straddles a switch between cameras -- the two
+    tracks disagree by up to a metre, which would otherwise read as a 25 m/s ball."""
+    speed = ball_speed(bx.astype(np.float64), by.astype(np.float64), half)
+    if source is None:
+        return speed
+    n = len(bx)
+    a, b = np.clip(np.arange(n) - half, 0, n - 1), np.clip(np.arange(n) + half, 0, n - 1)
+    return np.where(source[a] == source[b], speed, np.nan)
+
+
 def contact_distances(px, py, bx, by, team):
     """(d_home, d_away): distance from the ball to the nearest tracked player of each team."""
     dist = np.hypot(px - bx[:, None], py - by[:, None])
@@ -117,7 +128,7 @@ def build(data, events=None):
         "vis": vis,
         "bx": bx.astype(np.float64),
         "by": by.astype(np.float64),
-        "ball_speed": ball_speed(bx.astype(np.float64), by.astype(np.float64)),
+        "ball_speed": _single_source_speed(bx, by, data.get("ball_source")),
         "d_home": d_home,
         "d_away": d_away,
         "outside": outside_margin(bx, by, data["pitch"]),
