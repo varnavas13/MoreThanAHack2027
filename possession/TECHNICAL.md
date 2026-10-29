@@ -320,6 +320,7 @@ Python 3.11. With the data bundle in `data/`:
 ```bash
 pip install -r possession/requirements.txt
 python possession/run.py --name <team_name>            # ~2.5 min cold; writes evaluation/results/<team_name>.csv
+python possession/run.py --name <team_name> --out submission --with-doc   # both deliverables: submission/<team_name>.csv and .md
 python evaluation/validate_submission.py evaluation/results/<team_name>.csv
 python possession/run.py --name <team_name> --check    # optional: public 5-minute wiring check
 python possession/run.py --name <team_name> --no-broadcast   # tactical tracking only

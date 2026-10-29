@@ -62,3 +62,6 @@ __pycache__/
 venv/
 env/
 .DS_Store
+
+# Submission deliverables: <team>.csv is a full set of labels and must never be public
+submission/

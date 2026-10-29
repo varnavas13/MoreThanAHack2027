@@ -99,6 +99,33 @@ def build_labels(verbose=True, mean_possession_s=model.MEAN_POSSESSION_S, use_br
     return labels, f, events, data
 
 
+TECHNICAL_DOC = os.path.join(HERE, "TECHNICAL.md")
+RENAME_NOTE = "> Rename this file"
+
+
+def write_document(path, team):
+    """The technical document as a deliverable: <team>.md, titled for the team, without the
+    note telling the reader to rename it."""
+    with open(TECHNICAL_DOC, encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+    out, skipping = [], False
+    for line in lines:
+        if line.startswith(RENAME_NOTE):
+            skipping = True
+        if skipping:
+            if line.startswith(">"):
+                continue
+            skipping = False
+            if not line.strip():
+                continue                      # the blank line the note leaves behind
+        out.append(line)
+    out.insert(2, "**Team:** {}".format(team))
+    out.insert(3, "")
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("\n".join(out) + "\n")
+    return path
+
+
 def public_check(path):
     """Score the written file against the public 5 minutes. A wiring check, not a target."""
     import possession_metrics as pm
@@ -126,6 +153,9 @@ def main():
                         help="ignore the broadcast tracking (tactical ball only)")
     parser.add_argument("--check", action="store_true",
                         help="after writing, score against the public 5 minutes")
+    parser.add_argument("--with-doc", action="store_true",
+                        help="also write <name>.md, the technical document, next to the CSV -- "
+                             "with --name <team_name> that is both files the form asks for")
     args = parser.parse_args()
 
     labels, f, events, data = build_labels(mean_possession_s=args.mean_possession,
@@ -135,6 +165,9 @@ def main():
     print("\nwrote {}  (sha256 {}...)".format(os.path.relpath(path, ROOT), digest))
     counts = {k: int(np.sum(labels == k)) for k in "HADX"}
     print("  H {H}  A {A}  D {D}  X {X}".format(**counts))
+    if args.with_doc:
+        doc = write_document(os.path.join(args.out, args.name + ".md"), args.name)
+        print("wrote {}".format(os.path.relpath(doc, ROOT)))
     print("\nground-truth-free diagnostics, full match:")
     diagnostics.report(f, labels, events, data["pitch"], " ")
     if args.check:
