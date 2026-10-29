@@ -121,18 +121,34 @@ nearest the ball, −w/2 to the other, so team evidence never moves the alive/de
 
 ### 4.4 Who restarts
 
-The tag of a corner, goal kick or free kick names the side taking it — confirmed from geometry
-alone: every tagged corner sits at the tagged side's attacking end, every goal kick at its own.
-That side gets a bonus of `log(0.95 / 0.05)` (a tag right ~95 % of the time) on the
-dead → alive transition, from 2 s before the tag window opens to 18 s after (where 90 % of the
-first restarts fall). It acts on the restart only: if the other side then gains sustained
-control the possession still changes, but a header won without control — the usual first touch
-at a corner, where the kicker is often untracked — no longer hands possession over, which is
-the CHALLENGE.md rule. Restart side vs tag went from 15 / 24 to 23 / 24.
+CHALLENGE.md: "whenever play restarts after a stoppage, there is a clear possessor". Two pieces
+of evidence name it, and both enter the same way.
+
+* **The tag.** The tag of a corner, goal kick or free kick names the side taking it — confirmed
+  from geometry alone: every tagged corner sits at the tagged side's attacking end, every goal
+  kick at its own. Log-odds `log(0.95 / 0.05)`, from 2 s before the tag window opens to 18 s
+  after (where 90 % of first restarts fall).
+* **The taker.** Whoever takes a set piece stands on the ball just before it, so the side with
+  clear contact in the last 2 s before a restart restarts. Checked against the tags it was right
+  13 times in 14 (the other 10 had nobody tracked near the ball); log-odds are the
+  Laplace-smoothed record, `log(14 / 2)`. It covers throw-ins, which are never tagged.
+
+The summed log-odds `r` enter the transition as a factorised probability:
+`P(dead → side at t) = P(restart at t) · P(side | t)`, i.e. bonuses `log 2σ(r)` for home and
+`log 2σ(−r)` for away relative to the 50/50 split already in the transition matrix. The two
+sides' probabilities still sum to one, so this evidence decides **who** restarts, never
+**whether** — a first version that simply added `±r` also made restarting cheaper wherever a
+player stood on a dead ball, and invented sub-second "restarts" inside stoppages.
+
+It acts on the restart only: if the other side then gains sustained control, possession still
+changes. Restarts whose decoded side contradicts the taker fell from 21 to 14 of 98. The decoded
+side agrees with the tag on 19 of 24; four of the five others are corners after which the
+defending side then holds the ball for 5–17 s, i.e. a clearance kept, where skipping a ~1 s
+attacking spell costs little.
 
 The last-touch rule (Law 9: the restart goes to the opponents of the last player to touch the
-ball) was tried as tag-independent evidence and **dropped**: the nearest player at the moment
-the ball leaves the frame agreed with the tag on only 3 of 5 checkable exits.
+ball) was tried as further evidence and **dropped**: the nearest player at the moment the ball
+leaves the frame agreed with the tag on only 3 of 5 checkable exits.
 
 ### 4.5 A second camera — `broadcast.py`
 
@@ -184,7 +200,7 @@ dropped for making no difference or making things worse:
 | loose or contested ball | small margin → little evidence; possession stays with the last side |
 | ball missing in play | no evidence; possession persists (HMM) |
 | stoppage | dead state; event-gated entry/exit; ≥ 2 s |
-| restart | dead → the tagged side for corners, goal kicks, free kicks (soft); otherwise whichever side's contact follows |
+| restart | the side named by the tag (corners, goal kicks, free kicks) and by who stands on the ball before it (all restarts), as soft evidence on who restarts |
 | kick-off | not before the half's tagged window; only from the centre mark; done by the window's end |
 | ball over a line | dead (Law 9), until it is back in view — and for corners/goal kicks, back at the spot |
 | dead-ball ownership | not modelled — the answer is `D`, as the challenge asks |
@@ -216,21 +232,21 @@ at ±0.36. It cannot choose between versions. Instead, on the **full match**:
   the ball being untracked at the kick — corners in particular. This is geometry, not tags, so
   it is not circular even though the tagged side is used as evidence (§4.4).
 * **Phase-team agreement.** The share of decoded live frames inside Smart Tagging attacking
-  phases (Build Up, Progression, Ball in Final Third, …) that give the tagged side: **0.706**,
+  phases (Build Up, Progression, Ball in Final Third, …) that give the tagged side: **0.704**,
   against 0.62–0.64 for the baselines. Phases are not possessions, so this is never 1.0, and it
-  rises with smoother decodes (0.683 at a 10 s prior, 0.720 at 14 s) — it is only used to
+  rises with smoother decodes (0.676 at a 10 s prior, 0.709 at 14 s) — it is only used to
   compare variants at the *same* prior, never to choose the prior. (Submissions that use the
   phase tags as input, like a tag-filled vote, score high on it by construction.)
-* **Plausibility.** 290 possessions, mean 11.9 s, 16 shorter than 2 s; 145 stoppages, 45.7 %
-  dead; home share 0.593.
-* **Sensitivity to the one prior** (`--mean-possession`): 10 s → 349 possessions, 12 s → 290
-  (shipped), 14 s → 248. The dead-ball model is unaffected; nothing falls off a cliff.
+* **Plausibility.** 286 possessions, mean 12.0 s, 15 shorter than 2 s; 147 stoppages, 45.8 %
+  dead; home share 0.595.
+* **Sensitivity to the one prior** (`--mean-possession`): 10 s → 342 possessions, 12 s → 286
+  (shipped), 14 s → 245. The dead-ball model is unaffected; nothing falls off a cliff.
 
 Public window, for wiring only — not a ranking signal:
 
 | | macroF1 | spellF1 | F1 H / A / D | alive/dead F1 | possessions (truth 17) |
 |---|---|---|---|---|---|
-| this model | 0.840 | 0.446 | 0.840 / 0.845 / 0.834 | 0.963 | 18 |
+| this model | 0.831 | 0.485 | 0.831 / 0.826 / 0.834 | 0.963 | 16 |
 | baseline_smooth50 | 0.621 | 0.326 | 0.778 / 0.762 / 0.323 | 0.899 | 26 |
 
 The public `spellF1` of successive versions moved between 0.40 and 0.48 for changes that left
@@ -248,8 +264,8 @@ next change happened to recover it. Neither move was a reason for anything.
 * **The ball is untracked at many restarts** (corners, kick-offs), so restart timing falls back
   on collective acceleration; the broadcast adds a ball around 811 restart frames but, being a
   TV feed, often cuts away exactly then.
-* **Restart side for throw-ins** has no tag (Smart Tagging marks every throw-in `N/A`) and the
-  last-touch estimate was too noisy to use, so it comes only from post-restart contact.
+* **Restart side** is unknown when nobody is tracked near the ball before the restart and the
+  set piece is untagged — 35 of 145 restarts — and then comes only from post-restart contact.
 * **Kick-offs after goals** are slow and often untracked. Law 8 now forces the restart inside
   the tag window, but in two of the four the decoder then calls a second stoppage ~10 s later,
   with the ball still unseen and play slow.

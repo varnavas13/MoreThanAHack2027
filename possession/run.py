@@ -90,7 +90,7 @@ def build_labels(verbose=True, mean_possession_s=model.MEAN_POSSESSION_S, use_br
     dead = deadball.fit(f, verbose=verbose)
     if verbose:
         print("possession model (self-trained proximity evidence):")
-    priors = model.build_priors(f, events, data["pitch"])
+    priors = model.build_priors(f, events, data["pitch"], f_team)
     states, _, _ = model.fit(f_team, dead, verbose=verbose, priors=priors,
                              target_s=mean_possession_s)
     labels = model.to_letters(states)

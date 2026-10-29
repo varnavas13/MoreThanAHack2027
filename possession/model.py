@@ -184,8 +184,14 @@ def decode(f, dead, contact=None, contact_weight=CONTACT_WEIGHT, p_switch=P_SWIT
             bonus[:, team, DEAD] = dead["stop_bonus"][start:stop]
             bonus[:, DEAD, team] = dead["restart_bonus"][start:stop]
         if "restart_team" in priors:
-            bonus[:, DEAD, HOME] += priors["restart_team"][start:stop]
-            bonus[:, DEAD, AWAY] -= priors["restart_team"][start:stop]
+            # P(dead -> side at t) = P(restart at t) * P(side | t). The restart term is the
+            # learned event bonus; the side term turns the summed log-odds r into
+            # log(2 sigma(+-r)) -- relative to the 50/50 split already in the transition matrix
+            # -- so the two sides' probabilities still sum to one and the evidence decides who
+            # restarts, not whether.
+            side = priors["restart_team"][start:stop]
+            bonus[:, DEAD, HOME] += np.log(2.0) - np.logaddexp(0.0, -side)
+            bonus[:, DEAD, AWAY] += np.log(2.0) - np.logaddexp(0.0, side)
         if "restart_block" in priors:
             blocked = priors["restart_block"][start:stop]
             bonus[blocked, DEAD, HOME] += FORBIDDEN
@@ -278,6 +284,13 @@ RESTART_TEAM_BONUS = float(np.log(0.95 / 0.05))
 RESTART_TEAM_BEFORE = 2 * FPS
 RESTART_TEAM_AFTER = 18 * FPS
 TAG_TEAMS = {"barcelona": HOME, "atletic club": AWAY}
+# Whoever takes a set piece stands on the ball just before it: the side with clear contact in
+# the last two seconds before a restart restarts. Measured against the tagged side of corners,
+# goal kicks and free kicks it was right 13 times in 14, so its weight is the Laplace-smoothed
+# log-odds of that record. Unlike the tag, it also covers throw-ins, which are never tagged.
+TAKER_WINDOW = 2 * FPS
+TAKER_REACH = 2.0
+TAKER_BONUS = float(np.log((13 + 1) / (1 + 1)))
 
 
 def _set_pieces(events):
@@ -286,8 +299,27 @@ def _set_pieces(events):
             yield event, (event["tags"].get("Type") or "").strip().lower()
 
 
-def build_priors(f, events, pitch):
-    """Every Law-of-the-Game and Smart Tagging prior the decoder applies, as one dict."""
+def taker_bias(f):
+    """Per-frame log-bonus for a restart by home (> 0) or away (< 0), from who is on the ball.
+
+    At frame t, the clear contacts of the preceding TAKER_WINDOW frames vote; the majority side
+    gets TAKER_BONUS on a dead -> alive transition at t. No contact, no bonus.
+    """
+    near = np.minimum(f["d_home"], f["d_away"])
+    clear = f["vis"] & (near < TAKER_REACH) & (np.abs(f["d_home"] - f["d_away"]) > CONTACT_MARGIN)
+    vote = np.where(clear, np.where(f["d_home"] < f["d_away"], 1, -1), 0)
+    total = np.concatenate(([0], np.cumsum(vote)))
+    t = np.arange(len(vote))
+    window = total[t + 1] - total[np.maximum(t + 1 - TAKER_WINDOW, 0)]
+    return np.sign(window) * TAKER_BONUS
+
+
+def build_priors(f, events, pitch, f_team=None):
+    """Every Law-of-the-Game and Smart Tagging prior the decoder applies, as one dict.
+
+    f_team, if given, is the feature set the possession model reads (with the broadcast's
+    observations); the restart-taker evidence is computed from it, everything else from f.
+    """
     length, width = pitch
     n = f["n"]
     forced_dead = before_kickoff(f, events) | ball_out_of_play(f, pitch)
@@ -306,6 +338,7 @@ def build_priors(f, events, pitch):
             continue                                  # throw-ins: no side tagged
         lo, hi = max(0, start - RESTART_TEAM_BEFORE), min(n, start + RESTART_TEAM_AFTER)
         restart_team[lo:hi] = RESTART_TEAM_BONUS if team == HOME else -RESTART_TEAM_BONUS
+    restart_team += taker_bias(f_team if f_team is not None else f)
     forced_alive &= ~forced_dead & f["graded"]
     return {"forced_dead": forced_dead, "forced_alive": forced_alive,
             "restart_block": restart_block, "restart_team": restart_team}
