@@ -1,5 +1,16 @@
 # More than a Hack 2027 — Phase 1: Ball Possession
 
+> **This repository is a submission.** The possession model is in [`possession/`](possession/);
+> its technical document is [`possession/TECHNICAL.md`](possession/TECHNICAL.md). With the
+> data bundle in `data/`, one command regenerates the submitted file, byte for byte:
+>
+> ```bash
+> pip install -r possession/requirements.txt
+> python possession/run.py --name <team_name>     # -> evaluation/results/<team_name>.csv
+> ```
+>
+> Everything below is the organisers' original README.
+
 **Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
 and the [Mobile World Capital Barcelona](https://www.mwcbarcelona.com)**, at the Talent Arena in Barcelona.
 
