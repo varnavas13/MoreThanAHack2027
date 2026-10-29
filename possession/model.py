@@ -159,28 +159,39 @@ def emissions(dead_llr, contact, contact_weight=CONTACT_WEIGHT, temperature=TEMP
 
 
 def decode(f, dead, contact=None, contact_weight=CONTACT_WEIGHT, p_switch=P_SWITCH,
-           min_possession=MIN_POSSESSION, min_dead=MIN_DEAD, forced_dead=None):
+           min_possession=MIN_POSSESSION, min_dead=MIN_DEAD, priors=None):
     """Per-frame state codes (HOME/AWAY/DEAD) on graded frames, -1 elsewhere.
 
     dead is the dict deadball.fit returns: its log-ratio drives the alive/dead emission and its
     learned event bonuses make entering and leaving a stoppage cheap only at stop and restart
-    events.
+    events. priors is the dict build_priors returns -- the Laws of the Game and the Smart
+    Tagging set pieces, as hard constraints and transition bonuses.
     """
     if contact is None:
         contact = contact_evidence(f)
+    priors = priors or {}
     states = np.full(f["n"], -1, dtype=np.int8)
     trans = transition_matrix(p_switch)
     emission = emissions(dead["llr"], contact, contact_weight)
-    if forced_dead is not None:
-        emission[forced_dead, HOME] = FORBIDDEN
-        emission[forced_dead, AWAY] = FORBIDDEN
+    if "forced_dead" in priors:
+        emission[priors["forced_dead"], HOME] = FORBIDDEN
+        emission[priors["forced_dead"], AWAY] = FORBIDDEN
+    if "forced_alive" in priors:
+        emission[priors["forced_alive"], DEAD] = FORBIDDEN
     for start, stop in run_lengths(f["graded"]):
         bonus = np.zeros((stop - start, 3, 3))
         for team in (HOME, AWAY):
             bonus[:, team, DEAD] = dead["stop_bonus"][start:stop]
             bonus[:, DEAD, team] = dead["restart_bonus"][start:stop]
+        if "restart_team" in priors:
+            bonus[:, DEAD, HOME] += priors["restart_team"][start:stop]
+            bonus[:, DEAD, AWAY] -= priors["restart_team"][start:stop]
+        if "restart_block" in priors:
+            blocked = priors["restart_block"][start:stop]
+            bonus[blocked, DEAD, HOME] += FORBIDDEN
+            bonus[blocked, DEAD, AWAY] += FORBIDDEN
         path = hmm.viterbi_duration(emission[start:stop], trans,
-                                 [min_possession, min_possession, min_dead], bonus)
+                                    [min_possession, min_possession, min_dead], bonus)
         states[start:stop] = path
     return states
 
@@ -254,6 +265,52 @@ def ball_out_of_play(f, pitch):
     return forced & f["graded"]
 
 
+# Law 8: a kick-off is taken from the centre mark. While the ball is in view anywhere else, the
+# kick-off has not happened yet -- this stops a ball being rolled back to the spot from reading
+# as the restart. And a tagged kick-off has happened by the end of its window.
+KICKOFF_SPOT = 4.0
+KICKOFF_PLAY = 5 * FPS
+# The tagged side of a corner, goal kick or free kick takes the restart. The tagging is automatic,
+# so this is evidence, not a constraint: log-odds of a tag being right about 95 % of the time.
+# It acts only on the dead -> alive transition, so if the other side then gains control -- a
+# corner cleared and kept -- the possession still changes; a header won without control does not.
+RESTART_TEAM_BONUS = float(np.log(0.95 / 0.05))
+RESTART_TEAM_BEFORE = 2 * FPS
+RESTART_TEAM_AFTER = 18 * FPS
+TAG_TEAMS = {"barcelona": HOME, "atletic club": AWAY}
+
+
+def _set_pieces(events):
+    for event in events:
+        if event["code"].strip().lower() == "set pieces":
+            yield event, (event["tags"].get("Type") or "").strip().lower()
+
+
+def build_priors(f, events, pitch):
+    """Every Law-of-the-Game and Smart Tagging prior the decoder applies, as one dict."""
+    length, width = pitch
+    n = f["n"]
+    forced_dead = before_kickoff(f, events) | ball_out_of_play(f, pitch)
+    forced_alive = np.zeros(n, dtype=bool)
+    restart_block = np.zeros(n, dtype=bool)
+    restart_team = np.zeros(n)
+    off_spot = f["vis"] & (np.hypot(f["bx"] - length / 2, f["by"] - width / 2) > KICKOFF_SPOT)
+    for event, kind in _set_pieces(events):
+        start, stop = max(0, event["start_frame"]), min(n, event["end_frame"])
+        if kind.startswith("kick off"):
+            restart_block[start:stop] |= off_spot[start:stop]
+            forced_alive[stop:min(n, stop + KICKOFF_PLAY)] = True
+            continue
+        team = TAG_TEAMS.get(str(event["tags"].get("Team", "")).strip().lower())
+        if team is None:
+            continue                                  # throw-ins: no side tagged
+        lo, hi = max(0, start - RESTART_TEAM_BEFORE), min(n, start + RESTART_TEAM_AFTER)
+        restart_team[lo:hi] = RESTART_TEAM_BONUS if team == HOME else -RESTART_TEAM_BONUS
+    forced_alive &= ~forced_dead & f["graded"]
+    return {"forced_dead": forced_dead, "forced_alive": forced_alive,
+            "restart_block": restart_block, "restart_team": restart_team}
+
+
 def to_letters(states):
     """H/A/D on decoded frames, X wherever nothing was decoded (outside the graded halves)."""
     out = np.full(len(states), "X", dtype="<U1")
@@ -273,7 +330,7 @@ def mean_possession_s(states, graded):
     return n_alive / float(max(n_spells, 1)) / FPS
 
 
-def calibrate_temperature(f, dead, table_logit, codes, forced_dead, target_s=MEAN_POSSESSION_S,
+def calibrate_temperature(f, dead, table_logit, codes, priors, target_s=MEAN_POSSESSION_S,
                           low=0.01, high=1.0, steps=10):
     """Evidence temperature at which the decoded match agrees with the possession-length prior.
 
@@ -287,7 +344,7 @@ def calibrate_temperature(f, dead, table_logit, codes, forced_dead, target_s=MEA
     for _ in range(steps):
         mid = np.sqrt(low * high)
         states = decode(f, dead, contact=team_evidence(f, mid * table_logit, codes),
-                        forced_dead=forced_dead)
+                        priors=priors)
         if mean_possession_s(states, graded) < target_s:
             high = mid          # too many possessions: evidence too strong, cool it
         else:
@@ -295,7 +352,7 @@ def calibrate_temperature(f, dead, table_logit, codes, forced_dead, target_s=MEA
     return np.sqrt(low * high), states
 
 
-def fit(f, dead, iterations=2, verbose=True, forced_dead=None, target_s=MEAN_POSSESSION_S):
+def fit(f, dead, iterations=2, verbose=True, priors=None, target_s=MEAN_POSSESSION_S):
     """Seed with the contact rule, learn the proximity table, calibrate, re-decode.
 
     Returns (states, table, temperature). The contact rule only seeds the first pass. After it,
@@ -303,11 +360,11 @@ def fit(f, dead, iterations=2, verbose=True, forced_dead=None, target_s=MEAN_POS
     scale from calibrate_temperature.
     """
     codes = proximity_codes(f)
-    states = decode(f, dead, forced_dead=forced_dead)
+    states = decode(f, dead, priors=priors)
     table, temperature = None, TEAM_TEMPERATURE
     for iteration in range(iterations):
         table_logit = fit_team_table(f, states, codes, temperature=1.0)
-        temperature, new = calibrate_temperature(f, dead, table_logit, codes, forced_dead, target_s)
+        temperature, new = calibrate_temperature(f, dead, table_logit, codes, priors, target_s)
         table = temperature * table_logit
         if verbose:
             graded = f["graded"]

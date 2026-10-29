@@ -67,9 +67,9 @@ def build_labels(verbose=True, mean_possession_s=model.MEAN_POSSESSION_S):
     dead = deadball.fit(f, verbose=verbose)
     if verbose:
         print("possession model (self-trained proximity evidence):")
-    forced = model.before_kickoff(f, events) | model.ball_out_of_play(f, data["pitch"])
-    states, _, _ = model.fit(f, dead, verbose=verbose, forced_dead=forced,
-                            target_s=mean_possession_s)
+    priors = model.build_priors(f, events, data["pitch"])
+    states, _, _ = model.fit(f, dead, verbose=verbose, priors=priors,
+                             target_s=mean_possession_s)
     labels = model.to_letters(states)
     if verbose:
         print("done in {:.1f}s".format(time.time() - clock))
