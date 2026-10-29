@@ -148,9 +148,15 @@ verified individually (mean player-to-nearest-player distance under 1.2 m; true 
 The offsets are confirmed by an independent signal: agreement between the two ball tracks is
 sharpest at exactly these offsets (median 0.74 m), and worsens by ~0.1 m per frame either side.
 
-Use: wherever only the broadcast sees the ball (5,658 frames, a third of the live-play frames
-the tactical camera loses the ball in), its ball feeds the **possession model's** contact
-evidence. The alive/dead model keeps the tactical ball only — for it "the ball is visible" is a
+Use, for the **possession model's** contact evidence:
+
+* **the ball**, wherever only the broadcast sees it — 5,658 frames, a third of the live-play
+  frames the tactical camera loses the ball in;
+* **the players the tactical tracker missed** — a broadcast player with no tactical player
+  within 1 m is someone the wide camera's tracker lost (it sees ~20.5 of 22); 132,915 such
+  observations are appended as extra slots with the broadcast's team labels.
+
+Phase-team agreement (§7) went 0.699 → 0.703 with the ball and → 0.706 with the players. The alive/dead model keeps the tactical ball only — for it "the ball is visible" is a
 signal in itself, and the broadcast sees the ball through stoppages the wide camera loses it in.
 Using it there too (tested) changed twice as many frames with no measurable gain.
 
@@ -160,7 +166,7 @@ Each was measured on the ground-truth-free checks of §7 at the same possession 
 dropped for making no difference or making things worse:
 
 * **3 s minimum stoppage** (instead of 2 s) — mostly stretched short stoppages to 3 s rather
-  than removing them; phase-team agreement fell 0.703 → 0.695.
+  than removing them; phase-team agreement fell 0.703 → 0.695 (measured before the player fusion).
 * **Abstaining where the two trackers disagree on the team** of the player nearest the ball
   (4.7 % of such frames) — inside tagged phases the two trackers are each right about half the
   time (53 % / 47 %), so neither can arbitrate; agreement 0.703 → 0.700.
@@ -210,28 +216,28 @@ at ±0.36. It cannot choose between versions. Instead, on the **full match**:
   the ball being untracked at the kick — corners in particular. This is geometry, not tags, so
   it is not circular even though the tagged side is used as evidence (§4.4).
 * **Phase-team agreement.** The share of decoded live frames inside Smart Tagging attacking
-  phases (Build Up, Progression, Ball in Final Third, …) that give the tagged side: **0.703**,
+  phases (Build Up, Progression, Ball in Final Third, …) that give the tagged side: **0.706**,
   against 0.62–0.64 for the baselines. Phases are not possessions, so this is never 1.0, and it
-  rises with smoother decodes (0.676 at a 10 s prior, 0.722 at 14 s) — it is only used to
+  rises with smoother decodes (0.683 at a 10 s prior, 0.720 at 14 s) — it is only used to
   compare variants at the *same* prior, never to choose the prior. (Submissions that use the
   phase tags as input, like a tag-filled vote, score high on it by construction.)
-* **Plausibility.** 286 possessions, mean 12.0 s, 19 shorter than 2 s; 148 stoppages, 45.9 %
-  dead; home share 0.601.
-* **Sensitivity to the one prior** (`--mean-possession`): 10 s → 345 possessions, 12 s → 286
-  (shipped), 14 s → 242. The dead-ball model is unaffected; nothing falls off a cliff.
+* **Plausibility.** 290 possessions, mean 11.9 s, 16 shorter than 2 s; 145 stoppages, 45.7 %
+  dead; home share 0.593.
+* **Sensitivity to the one prior** (`--mean-possession`): 10 s → 349 possessions, 12 s → 290
+  (shipped), 14 s → 248. The dead-ball model is unaffected; nothing falls off a cliff.
 
 Public window, for wiring only — not a ranking signal:
 
 | | macroF1 | spellF1 | F1 H / A / D | alive/dead F1 | possessions (truth 17) |
 |---|---|---|---|---|---|
-| this model | 0.838 | 0.400 | 0.847 / 0.832 / 0.834 | 0.963 | 12 |
+| this model | 0.840 | 0.446 | 0.840 / 0.845 / 0.834 | 0.963 | 18 |
 | baseline_smooth50 | 0.621 | 0.326 | 0.778 / 0.762 / 0.323 | 0.899 | 26 |
 
 The public `spellF1` of successive versions moved between 0.40 and 0.48 for changes that left
 the full-match checks flat or better — the 17-possession noise the scorer warns about, seen
-first-hand. In this version a 3 s Athletic possession between two long Barcelona ones is merged
-away: the extra broadcast evidence lets the calibration cool the evidence, which is the
-self-consistency rule doing what it says.
+first-hand. One intermediate version merged a 3 s Athletic possession between two long Barcelona
+ones (spellF1 0.400); it was kept anyway because the full-match checks favoured it, and the
+next change happened to recover it. Neither move was a reason for anything.
 
 ## 8. Limitations, and what to do with more time
 

@@ -35,6 +35,9 @@ CAP = 5.0                              # metres: a player further than this coun
 # A verified frame's mean player-to-nearest-player distance. Live frames measure 0.2-0.9 m;
 # the best wrong frame anywhere in the match measures 1.8 m or more.
 VERIFY = 1.2
+# A broadcast player within this distance of a tactical player is the same person seen twice;
+# further away, he is someone the tactical tracker missed (it sees ~20.5 of 22).
+SAME_PLAYER = 1.0
 
 
 def _positions(data):
@@ -135,9 +138,34 @@ def ball_track(tactical, broadcast, b_index):
     return bx, by
 
 
+def extra_players(tactical, broadcast, b_index):
+    """(x, y) of broadcast players with no tactical player within SAME_PLAYER, per frame.
+
+    Shaped (frames, broadcast slots), NaN where there is no such player or the frame is not
+    verified. Their teams are broadcast["team"].
+    """
+    n, slots = len(b_index), broadcast["px"].shape[1]
+    ex = np.full((n, slots), np.nan, np.float32)
+    ey = np.full((n, slots), np.nan, np.float32)
+    frames = np.flatnonzero(b_index >= 0)
+    for a in range(0, len(frames), 20000):
+        fr = frames[a:a + 20000]
+        bpx, bpy = broadcast["px"][b_index[fr]], broadcast["py"][b_index[fr]]
+        d = np.hypot(bpx[:, :, None] - tactical["px"][fr][:, None, :],
+                     bpy[:, :, None] - tactical["py"][fr][:, None, :])
+        seen_twice = np.where(np.isfinite(d), d, np.inf).min(axis=-1) < SAME_PLAYER
+        keep = np.isfinite(bpx) & ~seen_twice
+        ex[fr] = np.where(keep, bpx, np.nan)
+        ey[fr] = np.where(keep, bpy, np.nan)
+    return ex, ey
+
+
 def fuse(tactical, broadcast, halves, cache_path=None, verbose=True):
-    """A copy of the tactical data whose ball is the tactical ball where seen, else the verified
-    broadcast ball. Adds "ball_source": 0 tactical, 1 broadcast, -1 neither.
+    """A copy of the tactical data with the broadcast's observations added where it has some.
+
+    The ball is the tactical ball where seen, else the verified broadcast ball ("ball_source":
+    0 tactical, 1 broadcast, -1 neither). Players the tactical tracker missed but the broadcast
+    shows are appended as extra slots, with the broadcast's team labels and no speed.
 
     Where both cameras see the ball the tactical one is kept: it is the reference camera, it has
     no cuts, and where the two disagree by metres it is usually a lofted ball that each camera
@@ -162,8 +190,15 @@ def fuse(tactical, broadcast, halves, cache_path=None, verbose=True):
     fused["bx"] = np.where(seen, tactical["bx"], bbx).astype(np.float32)
     fused["by"] = np.where(seen, tactical["by"], bby).astype(np.float32)
     fused["ball_source"] = np.where(seen, 0, np.where(np.isfinite(bbx), 1, -1)).astype(np.int8)
+    ex, ey = extra_players(tactical, broadcast, b_index)
+    fused["px"] = np.concatenate([tactical["px"], ex], axis=1)
+    fused["py"] = np.concatenate([tactical["py"], ey], axis=1)
+    fused["ps"] = np.concatenate([tactical["ps"], np.full_like(ex, np.nan)], axis=1)
+    fused["team"] = np.concatenate([tactical["team"], broadcast["team"]])
     if verbose:
-        print("  broadcast verified on {:.1%} of frames; ball added on {} frames".format(
-            float(np.mean(b_index >= 0)), int(np.sum(fused["ball_source"] == 1))))
+        print("  broadcast verified on {:.1%} of frames; ball added on {} frames, {} player "
+              "observations the tactical tracker missed".format(
+                  float(np.mean(b_index >= 0)), int(np.sum(fused["ball_source"] == 1)),
+                  int(np.isfinite(ex).sum())))
     return fused
 
