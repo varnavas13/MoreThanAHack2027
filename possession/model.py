@@ -50,7 +50,7 @@ P_SWITCH = 1.0 / (MEAN_POSSESSION_S * FPS)
 # Minimum durations, in frames. A possession can be very short (one controlled touch before a
 # tackle); a stoppage cannot.
 MIN_POSSESSION = 10
-MIN_DEAD = 2 * FPS
+MIN_DEAD = 3 * FPS
 # Log-evidence that rules a state out. Finite on purpose: the duration decoder works on
 # cumulative sums, where -inf - -inf would be NaN.
 FORBIDDEN = -1e3
