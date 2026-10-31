@@ -215,6 +215,14 @@ dropped for making no difference or making things worse:
 * **Last-touch rule for the restart side** — the nearest player at the exit agreed with the tag
   on 3 of 5 checkable exits.
 * **The broadcast ball in the alive/dead model** — see 4.5.
+* **The TV director's cuts as dead-ball evidence.** Frames where the broadcast fails to verify
+  are replays and close-ups, which the director cuts to during stoppages: the feed shows the
+  live wide shot on 85 % of decoded live frames but 27 % of dead ones. But the signal lags —
+  it cuts away 2–4 s after a stop and returns a few seconds before the restart. As a per-frame
+  view in the alive/dead model it improved restart geometry (found 55 → 56, in place 33 → 35)
+  but created spurious 1–2 s possessions between stoppages (possessions under 2 s 16 → 22);
+  as stop/restart event evidence EM gave it little weight (log-ratios within ±0.7) and it
+  changed almost nothing. Neither passed "better with no regression".
 * **A per-frame jersey-colour check of every outfield slot on the video** — outfield slots
   already match their kit 98.3 % of the time (§4.6); the residual is mostly isolated frames the
   switching penalty absorbs, not worth decoding the video on every run.
