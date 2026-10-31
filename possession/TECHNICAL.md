@@ -229,6 +229,15 @@ dropped for making no difference or making things worse:
   but created spurious 1–2 s possessions between stoppages (possessions under 2 s 16 → 22);
   as stop/restart event evidence EM gave it little weight (log-ratios within ±0.7) and it
   changed almost nothing. Neither passed "better with no regression".
+* **Touch evidence**: whether the ball just changed velocity next to the nearest player, as
+  a fourth dimension of the proximity table. On the held-out matches the nearest side 1–2 m
+  away is right 94–97 % of the time at a gentle touch (a 3–8 m/s change) against 67–71 %
+  otherwise, and spellF1 rose 0.602 → 0.608 and 0.589 → 0.590; on BAR-ATH one fewer tagged
+  restart was found. Inside the noise both ways, so not shipped.
+* **The decoder's structural settings**, tuned on the held-out matches (§7.1): minimum
+  possession 5 or 20 frames instead of 10, switching prior halved or doubled, confidence cap
+  0.999 instead of 0.99. Every one landed within ±0.001 of the shipped model: the temperature
+  calibration absorbs them, so the model is not balanced on any of these choices.
 * **A per-frame jersey-colour check of every outfield slot on the video**: outfield slots
   already match their kit 98.3 % of the time (§4.6); the residual is mostly isolated frames the
   switching penalty absorbs, not worth decoding the video on every run.
@@ -318,6 +327,30 @@ event-derived truth is timed by hand, a few frames from what a corrected trackin
 What transfers is the comparison: the method beats the baseline method by ~0.15 on two matches
 it never saw.
 
+**Where the remaining errors are.** About 80 % of the true possessions the model misses are
+shorter than 5 s (found at IoU 0.5: 5–20 % of those under 2 s, 42–51 % at 2–5 s, 73–87 % above
+5 s). The missed ones have a median of 3–4 frames with their own side clearly on the ball,
+against 25–30 for the short ones it does find: they are single touches, an interception passed
+or cleared at once, which the annotators counted as a recovery. CHALLENGE.md says a touch
+without control is no change of possession, so chasing these would fit the annotators'
+convention rather than the competition's definition. Stoppage timing is already exact on this
+tracking (median offset 0 s at both stops and restarts, interquartile range within ±0.3 s); the
+extra decoded stoppages (about 15 per match) look like real ones, ball unseen and players
+walking for 7–16 s, and are most likely stoppages the events do not mark.
+
+**Robustness to BAR-ATH's ball loss** (`--ball-dropout`). This tracking almost never loses the
+ball in live play; BAR-ATH's tactical camera does on 10 % of live frames, 6.4 % after adding the
+broadcast (§4.5). Removing the ball at random from that share of live frames, in 1–5 s gaps:
+
+| ball removed from live frames | sample game 1 | sample game 2 | cost |
+|---|---|---|---|
+| 0 % | 0.602 | 0.589 | |
+| 6.4 % (BAR-ATH with the broadcast) | 0.586 | 0.576 | 0.014 |
+| 10 % (BAR-ATH's tactical camera alone) | 0.582 | 0.564 | 0.022 |
+
+So a perfect way of filling ball gaps could win back about 0.014 at most, inside the noise, and
+the broadcast fusion already recovered roughly a third of the cost.
+
 ### 7.2 On the provided match, without ground truth
 
 * **Restart check.** Every Smart Tagging corner, goal kick, throw-in and kick-off is a restart.
@@ -358,7 +391,9 @@ next change happened to recover it. Neither move was a reason for anything.
 ## 8. Limitations, and what to do with more time
 
 * **Short possessions** (< ~2 s) are mostly missed, the price of not inventing spurious ones:
-  real matches have about 60 per match, and this model decodes 21 on BAR-ATH.
+  real matches have about 60 per match, and this model decodes 21 on BAR-ATH. On the labelled
+  matches the missed ones are mostly single touches with 3–4 frames of contact (§7.1), the grey
+  zone between a touch and control.
 * **Identity switches across teams** in the tracking produce confident wrong contact evidence.
   The large, systematic case (goalkeeper slots) is fixed (§4.6); outfield slots still carry
   a ~1.7 % residual that a second tracker cannot arbitrate (§4.7).
@@ -395,6 +430,7 @@ python possession/kit_check.py                     # or --video path/to/BAR-ATH_
 
 # optional: the validation of §7.1 on two other matches (downloads ~125 MB once, ~5 min)
 python possession/other_games.py --mean-possession 12 14
+python possession/other_games.py --ball-dropout 0.064   # robustness to BAR-ATH's ball loss
 ```
 
 Deterministic: no randomness anywhere, and two runs from a cold cache give byte-identical files.

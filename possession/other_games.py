@@ -167,6 +167,26 @@ def baseline(data, truth, window=50):
     return pm.evaluate(pm.label_codes(truth), pm.label_codes(labels))
 
 
+def drop_ball(data, truth, share, seed=0):
+    """A copy of data with the ball removed from `share` of the live frames, in 1-5 s gaps.
+
+    BAR-ATH's automatic tracking loses the ball during live play (10 % of live frames with the
+    tactical camera, 6.4 % after adding the broadcast); this tracking almost never does. This
+    measures what that costs. Seeded, so the result is reproducible.
+    """
+    rng = np.random.RandomState(seed)
+    bx, by = data["bx"].copy(), data["by"].copy()
+    alive = np.flatnonzero(np.isin(truth, ["H", "A"]))
+    target, removed = int(share * len(alive)), 0
+    while removed < target:
+        start, length = alive[rng.randint(len(alive))], rng.randint(FPS, 5 * FPS + 1)
+        gap = np.arange(start, min(start + length, len(bx)))
+        removed += int(np.sum(np.isfinite(bx[gap])))
+        bx[gap] = np.nan
+        by[gap] = np.nan
+    return dict(data, bx=bx, by=by)
+
+
 def truth_stats(truth):
     graded = truth != "X"
     spells = pm.possession_spells(pm.label_codes(truth), pm.valid_runs(pm.label_codes(truth)))
@@ -182,11 +202,15 @@ def main():
     parser.add_argument("--folder", default=os.path.join(DATA_DIR, "external", "metrica"))
     parser.add_argument("--mean-possession", type=float, nargs="+",
                         default=[model.MEAN_POSSESSION_S])
+    parser.add_argument("--ball-dropout", type=float, default=0.0,
+                        help="remove the ball from this share of live frames first (robustness)")
     args = parser.parse_args()
     for game in GAMES:
         events = pd.read_csv(fetch(game, "events", args.folder))
         data = tracking(game, args.folder)
         truth = ground_truth(events, len(data["bx"]))
+        if args.ball_dropout:
+            data = drop_ball(data, truth, args.ball_dropout)
         t = truth_stats(truth)
         print("Sample game {}: {} possessions, {:.1f} s live per possession, {} stoppages, "
               "{:.0%} dead".format(game, t["possessions"], t["alive_per_possession_s"],
