@@ -1,5 +1,5 @@
 # Pinned versions the shipped submission was produced and verified with (Python 3.11).
-# numpy and pandas only -- nothing else is imported.
+# numpy and pandas only; nothing else is imported.
 numpy==2.4.6
 pandas==3.1.0
 # Optional, only for possession/kit_check.py (validation on the video, not used by the pipeline):

@@ -3,8 +3,8 @@
 Possession is a state, not a per-frame vote: it persists through passes, loose balls and missing
 tracking until someone else gains control. A hidden Markov model says exactly that. Each frame
 contributes log-evidence for each state, every change of state costs a fixed log-penalty, and the
-decoder returns the single most probable state sequence. A deflection -- a few frames of contact
-by the other side -- cannot pay the switching cost; a controlled reception can.
+decoder returns the single most probable state sequence. A deflection (a few frames of contact
+by the other side) cannot pay the switching cost; a controlled reception can.
 
 Durations are enforced by expanding a state into a chain of sub-states (see expand_min_duration):
 a state with minimum duration k becomes k copies that must be visited in order, and only the last
@@ -138,7 +138,7 @@ def viterbi_chain(log_emission, log_transition, min_duration, switch_bonus=None)
 
 
 def viterbi_duration(log_emission, log_transition, min_duration, switch_bonus=None):
-    """Exactly viterbi_chain's optimum, in duration-explicit form -- several times faster.
+    """Exactly viterbi_chain's optimum, in duration-explicit form, several times faster.
 
     A state s with minimum duration k is either *entered* at t (its first frame is t) or
     *settled* at t (it has lasted at least k frames). With C_s the cumulative emission of s:

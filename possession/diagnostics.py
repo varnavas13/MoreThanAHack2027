@@ -1,14 +1,14 @@
 """Checks of a decoded match that need no ground truth.
 
-The public five minutes are too small to choose between two versions of a model -- see
-EVALUATION.md -- and the rules forbid tuning on them. These checks use the whole match instead,
+The public five minutes are too small to choose between two versions of a model (see
+EVALUATION.md), and the rules forbid tuning on them. These checks use the whole match instead,
 and only things that are true by the laws of the game:
 
   restart geometry   every Smart Tagging corner, goal kick, throw-in and kickoff is a restart
                      from a known place. A decoded restart inside the tag window, with the ball
                      at that place, is a restart found and timed; anything else is a miss.
   plausibility       possession count and mean length, dead-ball share and spell count, home
-                     share -- reported, never optimised, because a model can match them while
+                     share, reported and never optimised, because a model can match them while
                      being wrong everywhere.
 
 The Smart Tagging is itself automatic and imperfect, so neither check is a score. They exist to
@@ -91,7 +91,7 @@ def phase_agreement(labels, events):
     """Share of decoded live frames inside tagged attacking phases that give the tagged side.
 
     A cross-check of the team call from an independent algorithm (Metrica's tagging). Phases are
-    not possessions -- one can span a turnover -- so this is never 1.0 for a correct model; it
+    not possessions (one can span a turnover), so this is never 1.0 for a correct model; it
     is for catching a change that makes the team call clearly worse.
     """
     agree = total = 0

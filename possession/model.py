@@ -1,4 +1,4 @@
-"""Who has the ball? A three-state HMM -- home, away, dead -- decoded jointly with Viterbi.
+"""Who has the ball? A three-state HMM (home, away, dead) decoded jointly with Viterbi.
 
 What the challenge asks for, restated as a model:
 
@@ -12,12 +12,12 @@ So each frame contributes evidence and each change of state costs a penalty:
   alive vs dead   the tempered log-likelihood ratio from deadball.py
   home vs away    contact: a player of one side within CONTACT_RADIUS of the ball with the
                   nearest opponent clearly further away. The evidence is zero-sum between home
-                  and away -- +k/2 for the side in contact, -k/2 for the other -- so it never
+                  and away (+k/2 for the side in contact, -k/2 for the other), so it never
                   moves the alive/dead decision, only which alive state wins.
 
 A change of possession therefore happens only when the new side's contact evidence outweighs
-the switching penalty, i.e. a few frames of clear contact -- the "controlled possession" of
-CHALLENGE.md -- and a one-frame deflection cannot do it. Between contacts there is no evidence
+the switching penalty, i.e. a few frames of clear contact (the "controlled possession" of
+CHALLENGE.md), and a one-frame deflection cannot do it. Between contacts there is no evidence
 and the state persists, which is the "possession stays with the last team" rule.
 
 Every constant below is a physical or football prior, written down before decoding, not fitted
@@ -100,7 +100,7 @@ def fit_team_table(f, states, codes, temperature=TEAM_TEMPERATURE):
 
     Self-training: the decoded possession is the pseudo-label, the rule the competition allows
     ("pseudo-labels produced by an algorithm"). Agreement below one half is floored to no
-    evidence rather than inverted -- a ball struck past the nearest player says nothing about
+    evidence rather than inverted: a ball struck past the nearest player says nothing about
     who has it, not that the other side does.
     """
     n_bins = (len(DIST_EDGES) + 1) * (len(MARGIN_EDGES) + 1) * (len(BALL_EDGES) + 1)
@@ -118,8 +118,8 @@ def correlation_time(f, states, codes, max_lag=MAX_LAG):
     """Integrated autocorrelation time, in frames, of the nearest side disagreeing with the
     decoded possession.
 
-    It is how long one tracking error persists -- a duel, a swapped track, a ball occluded
-    behind a body -- and therefore how many consecutive frames amount to one independent piece
+    It is how long one tracking error persists (a duel, a swapped track, a ball occluded
+    behind a body), and therefore how many consecutive frames amount to one independent piece
     of evidence. The sum is truncated at the first lag where the correlation drops below 0.05,
     the usual initial-positive-sequence cut.
     """
@@ -164,7 +164,7 @@ def decode(f, dead, contact=None, contact_weight=CONTACT_WEIGHT, p_switch=P_SWIT
 
     dead is the dict deadball.fit returns: its log-ratio drives the alive/dead emission and its
     learned event bonuses make entering and leaving a stoppage cheap only at stop and restart
-    events. priors is the dict build_priors returns -- the Laws of the Game and the Smart
+    events. priors is the dict build_priors returns: the Laws of the Game and the Smart
     Tagging set pieces, as hard constraints and transition bonuses.
     """
     if contact is None:
@@ -186,8 +186,8 @@ def decode(f, dead, contact=None, contact_weight=CONTACT_WEIGHT, p_switch=P_SWIT
         if "restart_team" in priors:
             # P(dead -> side at t) = P(restart at t) * P(side | t). The restart term is the
             # learned event bonus; the side term turns the summed log-odds r into
-            # log(2 sigma(+-r)) -- relative to the 50/50 split already in the transition matrix
-            # -- so the two sides' probabilities still sum to one and the evidence decides who
+            # log(2 sigma(+-r)), relative to the 50/50 split already in the transition matrix,
+            # so the two sides' probabilities still sum to one and the evidence decides who
             # restarts, not whether.
             side = priors["restart_team"][start:stop]
             bonus[:, DEAD, HOME] += np.log(2.0) - np.logaddexp(0.0, -side)
@@ -206,8 +206,8 @@ def before_kickoff(f, events):
     """Graded frames before each half's tagged kick-off window: the ball cannot be in play.
 
     Law 8: every half starts with a kick-off. The Smart Tagging marks a ~5 s window containing
-    it, so every graded frame of a half before that window is pre-match or halftime -- warm-ups,
-    players walking out -- however lively it looks. Inside the window the decoder still chooses
+    it, so every graded frame of a half before that window is pre-match or halftime (warm-ups,
+    players walking out), however lively it looks. Inside the window the decoder still chooses
     the restart frame itself.
     """
     forced = np.zeros(f["n"], dtype=bool)
@@ -272,14 +272,14 @@ def ball_out_of_play(f, pitch):
 
 
 # Law 8: a kick-off is taken from the centre mark. While the ball is in view anywhere else, the
-# kick-off has not happened yet -- this stops a ball being rolled back to the spot from reading
+# kick-off has not happened yet. This stops a ball being rolled back to the spot from reading
 # as the restart. And a tagged kick-off has happened by the end of its window.
 KICKOFF_SPOT = 4.0
 KICKOFF_PLAY = 5 * FPS
 # The tagged side of a corner, goal kick or free kick takes the restart. The tagging is automatic,
 # so this is evidence, not a constraint: log-odds of a tag being right about 95 % of the time.
-# It acts only on the dead -> alive transition, so if the other side then gains control -- a
-# corner cleared and kept -- the possession still changes; a header won without control does not.
+# It acts only on the dead -> alive transition, so if the other side then gains control (a
+# corner cleared and kept), the possession still changes; a header won without control does not.
 RESTART_TEAM_BONUS = float(np.log(0.95 / 0.05))
 RESTART_TEAM_BEFORE = 2 * FPS
 RESTART_TEAM_AFTER = 18 * FPS
@@ -353,7 +353,7 @@ def to_letters(states):
 
 
 def mean_possession_s(states, graded):
-    """Alive time per possession, in seconds -- the statistic the switching prior encodes."""
+    """Alive time per possession, in seconds: the statistic the switching prior encodes."""
     n_alive, n_spells = 0, 0
     for start, stop in run_lengths(graded):
         seg = states[start:stop]

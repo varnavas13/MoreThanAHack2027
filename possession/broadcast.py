@@ -1,6 +1,6 @@
 """Align the broadcast tracking to the tactical timeline, algorithmically, and use its ball.
 
-The broadcast recording is a second, independent camera with its own automatic tracking -- and
+The broadcast recording is a second, independent camera with its own automatic tracking, and
 so its own ball track, which sees the ball at different moments than the tactical camera does
 (close-ups of a corner taker, a ball the wide shot loses in a crowd). No mapping between the two
 timelines is provided. This module recovers one from the tracking alone.
@@ -13,7 +13,7 @@ rather than pausing it, so the offset never drifts, and replay or close-up frame
 match. So:
 
   1. estimate each half's offset by a coarse-to-fine search over a few dozen sampled moments,
-     taking the median -- robust to the samples that land in a replay;
+     taking the median, which is robust to the samples that land in a replay;
   2. verify every tactical frame individually: the broadcast frame at that offset must show
      enough players, each close to a tactical player;
   3. on verified frames, the broadcast ball is a second observation of the same ball.
@@ -169,7 +169,7 @@ def fuse(tactical, broadcast, halves, cache_path=None, verbose=True):
 
     Where both cameras see the ball the tactical one is kept: it is the reference camera, it has
     no cuts, and where the two disagree by metres it is usually a lofted ball that each camera
-    projects onto the ground differently -- the wide, high tactical view is the less wrong.
+    projects onto the ground differently, and the wide, high tactical view is the less wrong.
     """
     if cache_path is not None:
         try:

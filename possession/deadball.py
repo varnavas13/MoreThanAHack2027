@@ -10,8 +10,8 @@ match:
      minimum durations, giving a new split;
   4. repeat from 2 until the split stops changing.
 
-The features are discretised on purpose. Their class-conditional shapes are far from Gaussian --
-ball visibility is binary, the out-of-bounds margin is meaningful only near zero -- and a
+The features are discretised on purpose. Their class-conditional shapes are far from Gaussian
+(ball visibility is binary, the out-of-bounds margin is meaningful only near zero), and a
 histogram with Laplace smoothing assumes nothing about them.
 
 Two priors, both from football rather than from this game's labels:
@@ -64,8 +64,8 @@ def discretize(f):
 
     Features that describe the same thing are binned jointly rather than separately, so naive
     Bayes counts each source of evidence once. Ball visibility in particular would otherwise be
-    counted three times -- by the ball, out-of-bounds and contact features all having a
-    "missing" bin -- and the model would conclude that a dead ball is never visible, which is
+    counted three times (the ball, out-of-bounds and contact features all have a
+    "missing" bin), and the model would conclude that a dead ball is never visible, which is
     exactly wrong for throw-ins and goal kicks.
 
       view 0, the ball:     missing -> how long; visible -> speed x line x contact
@@ -127,8 +127,8 @@ def _window_mean(x, lo, hi):
 def event_codes(f):
     """(stop_code, restart_code): what the frame looks like as a candidate edge of a stoppage.
 
-    A stoppage starts at an event -- the ball crosses a line, the ball vanishes, everyone brakes
-    at a whistle -- and ends at one: the ball is struck from rest, it reappears, everyone
+    A stoppage starts at an event (the ball crosses a line, the ball vanishes, everyone brakes
+    at a whistle) and ends at one: the ball is struck from rest, it reappears, everyone
     accelerates. These codes describe frame t as a candidate first-dead (stop) or first-alive
     (restart) frame; deadball.fit learns how much each pattern raises the odds of a transition.
     """

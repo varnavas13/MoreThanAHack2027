@@ -2,7 +2,7 @@
 
 The raw line is "<frame_id>:<x,y,s>;<x,y,s>;...;<x,y,s>:<bx,by,bs>", 46 player groups and one
 ball group. Turning every separator into a comma makes each line a flat row of 1 + 46*3 + 3
-numbers, which pandas' C parser reads in seconds -- an order of magnitude faster than splitting
+numbers, which pandas' C parser reads in seconds, an order of magnitude faster than splitting
 199,319 lines in Python.
 
 Everything comes back on the video-frame index (row i = submission row i), in METRES, with the
@@ -91,7 +91,7 @@ def load(game=GAME, data_dir=None, cache=True, source=DEFAULT_SOURCE):
     """dict with px, py, ps (frames x slots), bx, by (frames), team, gk, pitch.
 
     source="broadcast" loads the TV recording's tracking instead: same format and pitch
-    coordinates, but its own frame index -- NOT aligned to the submission. See broadcast.py.
+    coordinates, but its own frame index, NOT aligned to the submission. See broadcast.py.
     """
     meta_path, raw_path = require(["atd_meta", "atd_raw"], game, data_dir, source)
     n_frames = source_frames(source, game)

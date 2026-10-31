@@ -5,7 +5,7 @@ pipeline relies on: that goalkeeper slots must be re-assigned by which goal they
 (features.keeper_teams), while outfield slots can keep their metadata team.
 
 It samples frames where a tracked player is on the ball, projects him into the image with the
-provided homography, takes a torso patch, and classifies the kit by colour -- no labels, no
+provided homography, takes a torso patch, and classifies the kit by colour, with no labels and no
 learning, two fixed colour rules read off the kits of this match:
 
   goalkeepers   Barcelona lime, Athletic teal: the share of teal pixels (hue 70-100) separates
@@ -111,7 +111,7 @@ def main():
     except ImportError:
         sys.exit("needs OpenCV:  pip install opencv-python-headless==5.0.0.93")
     if not os.path.isfile(args.video):
-        sys.exit("tactical video not found at {} -- pass --video".format(args.video))
+        sys.exit("tactical video not found at {}; pass --video".format(args.video))
     data = atd.load()
     matrices, _, _ = load_homography.load()
     capture = cv2.VideoCapture(args.video)

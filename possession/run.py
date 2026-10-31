@@ -16,7 +16,7 @@ Pipeline (each step is its own module, documented there):
                 possession counts and shares
 
 Deterministic: the same inputs give the same file, byte for byte. Nothing is random and nothing
-reads a ground truth -- the public five minutes are used only by --check, after the file is
+reads a ground truth: the public five minutes are used only by --check, after the file is
 written, to confirm the pipeline is wired correctly.
 """
 
@@ -60,13 +60,13 @@ def write_submission(path, labels):
 def team_features(data, events, f, verbose=True):
     """Features for the possession model: the tactical ones, with the ball filled in from the
     broadcast camera wherever only it sees the ball (see broadcast.py). The alive/dead model
-    keeps the tactical-only features -- for it, "the ball is visible" is a signal in itself, and
+    keeps the tactical-only features: for it, "the ball is visible" is a signal in itself, and
     the broadcast sees the ball through stoppages that the wide camera loses it in."""
     try:
         other = atd.load(source="broadcast")
     except IOError:
         if verbose:
-            print("  no broadcast tracking found -- possession model uses the tactical ball only")
+            print("  no broadcast tracking found; the possession model uses the tactical ball only")
         return f
     cache = os.path.join(atd.DATA_DIR, "cache",
                          "broadcast_map_v{}.npz".format(broadcast.MAP_VERSION))
@@ -137,7 +137,7 @@ def public_check(path):
         print("INVALID: " + reason)
         return
     r = pm.evaluate(gt, pm.label_codes(frame))
-    print("public 5-minute check (17 possessions -- NOT a ranking signal, see EVALUATION.md):")
+    print("public 5-minute check (17 possessions, NOT a ranking signal; see EVALUATION.md):")
     print("  macroF1 {:.4f}   spellF1 {:.4f}   possessions {} (truth 17)".format(
         r["macro_f1"], r["spell_f1_mean"], r["n_pred_spells"]))
 
@@ -148,13 +148,13 @@ def main():
     parser.add_argument("--out", default=DEFAULT_OUT, help="output folder")
     parser.add_argument("--mean-possession", type=float, default=model.MEAN_POSSESSION_S,
                         help="the possession-length prior, seconds (default %(default)s). A "
-                             "football prior, not a fitted value -- see TECHNICAL.md")
+                             "football prior, not a fitted value; see TECHNICAL.md")
     parser.add_argument("--no-broadcast", action="store_true",
                         help="ignore the broadcast tracking (tactical ball only)")
     parser.add_argument("--check", action="store_true",
                         help="after writing, score against the public 5 minutes")
     parser.add_argument("--with-doc", action="store_true",
-                        help="also write <name>.md, the technical document, next to the CSV -- "
+                        help="also write <name>.md, the technical document, next to the CSV; "
                              "with --name <team_name> that is both files the form asks for")
     args = parser.parse_args()
 
