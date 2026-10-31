@@ -60,7 +60,7 @@ def ball_speed(bx, by, half=2):
 
 
 def _single_source_speed(bx, by, source=None, half=2):
-    """ball_speed, but NaN wherever its window straddles a switch between cameras -- the two
+    """ball_speed, but NaN wherever its window straddles a switch between cameras: the two
     tracks disagree by up to a metre, which would otherwise read as a 25 m/s ball."""
     speed = ball_speed(bx.astype(np.float64), by.astype(np.float64), half)
     if source is None:
@@ -75,7 +75,7 @@ def keeper_teams(px, team, gk, pitch, attack_first_half, game=GAME):
 
     The tracker files a goalkeeper under a goalkeeper slot by where he stands rather than by
     which side he plays for, so a slot labelled for one team spends long stretches holding the
-    other team's keeper -- confirmed on the video, where the two keepers wear different greens.
+    other team's keeper, confirmed on the video, where the two keepers wear different greens.
     A goalkeeper defends his own goal, so a goalkeeper slot is credited, frame by frame, to the
     side whose goal is nearer, using each side's attacking direction (swapped at halftime).
     """
@@ -160,7 +160,8 @@ def build(data, events=None):
 
     out = {
         "n": n,
-        "graded": graded_mask(n),
+        # another match (see other_games.py) brings its own; BAR-ATH's come from games.py
+        "graded": data["graded"] if "graded" in data else graded_mask(n),
         "vis": vis,
         "bx": bx.astype(np.float64),
         "by": by.astype(np.float64),
