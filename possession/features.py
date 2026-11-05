@@ -75,7 +75,7 @@ def keeper_teams(px, team, gk, pitch, attack_first_half, game=GAME):
 
     The tracker files a goalkeeper under a goalkeeper slot by where he stands rather than by
     which side he plays for, so a slot labelled for one team spends long stretches holding the
-    other team's keeper, confirmed on the video, where the two keepers wear different greens.
+    other team's keeper: it spends minutes at the other side's goal, which no keeper does.
     A goalkeeper defends his own goal, so a goalkeeper slot is credited, frame by frame, to the
     side whose goal is nearer, using each side's attacking direction (swapped at halftime).
     """

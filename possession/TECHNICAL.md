@@ -21,8 +21,8 @@ its kick-off, which is taken from the centre mark (Law 8), and a ball that has l
 out of play (Law 9). The tagged side of a set piece takes the restart (soft evidence). The
 broadcast recording, aligned to the tactical timeline from the tracking alone, supplies a second
 ball track for the possession model. Goalkeeper slots, which the tracker fills by position rather
-than by team, are credited to the side whose goal they stand in, a fix found by overlaying the
-tracking on the video and verified there against the keepers' kits.
+than by team, are credited to the side whose goal they stand in: a keeper slot spending
+minutes at the other team's goal can only be holding the other keeper.
 
 On two other professional matches, with possessions rebuilt from their event data, the same
 pipeline scores **0.60 spellF1**, against 0.44 for the organisers' baseline method (§7).
@@ -57,8 +57,8 @@ are interpretable, which matters when they cannot be tuned against labels.
 | ATD metadata | **yes** | slot → team; no player identities are needed or used |
 | Smart Tagging `SET PIECES` | **yes**, as evidence | inside-a-set-piece-window feature; kick-off windows for Law 8 |
 | Smart Tagging phase codes | no | the defending codes mirror the attacking ones exactly (same counts and durations), and phases are not possessions; the team evidence from tracking is far denser |
-| homography | for validation | projects tracked players into the video for the kit check (§4.6) |
-| tactical video | for validation only | the kit check (§4.6, `kit_check.py`); the pipeline never reads it |
+| homography | no | only needed to work with the video, which the pipeline does not do |
+| tactical video | no | watched to understand the data (§6); never read by the pipeline, never used to check its output |
 | broadcast video | no | not needed |
 | other games: Metrica's two open sample matches | for validation only | labelled possessions to test the method and choose two settings (§6, §7.1) |
 | broadcast ATD | **yes**, for the team model | aligned to the tactical timeline from the tracking alone (§4.5); its ball fills frames the tactical camera misses |
@@ -187,10 +187,10 @@ The alive/dead model keeps the tactical ball only: for it "the ball is visible" 
 signal in itself, and the broadcast sees the ball through stoppages the wide camera loses it in.
 Using it there too (tested) changed twice as many frames with no measurable gain.
 
-### 4.6 Goalkeeper slots, and what the video says
+### 4.6 Goalkeeper slots
 
-Overlaying the tracking on the tactical video (homography projection) showed the tracker filing
-a goalkeeper under a goalkeeper *slot* by where he stands rather than which side he plays for:
+The tracking itself shows the tracker filing a goalkeeper under a goalkeeper *slot* by where
+he stands rather than which side he plays for:
 the slot labelled Athletic spends 10–13 % of its time at Barcelona's goal, in runs of up to
 230 s, and the Barcelona slot does the mirror error less often: 953 ball contacts credited to
 the wrong side at full weight, goal kicks included.
@@ -199,12 +199,11 @@ The fix needs no video: **a goalkeeper defends his own goal**, so each goalkeepe
 credited, frame by frame, to the side whose goal is nearer, using each side's attacking direction
 from the metadata (swapped at halftime), in `features.keeper_teams`, applied to both trackers.
 
-Measured on the video with `kit_check.py`: the two keepers wear different greens (lime and
-teal; grass never reaches the teal hue), and the outfield kits are dark and white. On 120 random
-frames with a keeper on the ball, the metadata team matches his kit **78 %** of the time, the
-corrected team **97.5 %** (on 60 frames where the two labellings disagree: corrected right 58,
-metadata right 2). Outfield slots match their kit 98.3 % of the time, so there is no comparable
-error to fix there and the pipeline does not read the video at all.
+A keeper does not spend minutes at the other side's goal, so a goalkeeper slot that does is
+holding the other keeper: the tracking alone shows it and fixes it. (An earlier version also
+measured the keepers' kit colours on the video to confirm this. The organisers have since
+clarified that checking output against the video is not allowed, so that check was removed
+from the repository and plays no part in this submission.)
 
 Effect: restarts whose decoded side contradicts the taker fell 14 → 10 of 96; restart side vs
 tag 19 → 20 of 24. Phase-team agreement *fell* 0.704 → 0.682; see §7 for why that check
@@ -238,9 +237,6 @@ dropped for making no difference or making things worse:
   possession 5 or 20 frames instead of 10, switching prior halved or doubled, confidence cap
   0.999 instead of 0.99. Every one landed within ±0.001 of the shipped model: the temperature
   calibration absorbs them, so the model is not balanced on any of these choices.
-* **A per-frame jersey-colour check of every outfield slot on the video**: outfield slots
-  already match their kit 98.3 % of the time (§4.6); the residual is mostly isolated frames the
-  switching penalty absorbs, not worth decoding the video on every run.
 
 ## 5. Possession rules implemented
 
@@ -274,7 +270,8 @@ recovery; duels change nothing; the ball dies at a ball out, foul, offside, hand
 shot out and lives again at the next restart) and scores the unchanged pipeline on them with
 the official metric. They were used to validate the method and to choose two settings: the
 minimum stoppage (3 s) and the possession prior (12 s), §7. Nothing is trained on them: every
-weight is still fitted, without labels, on the match being labelled.
+weight is still fitted, without labels, on the match being labelled. Source acknowledged as
+Metrica asks: Metrica Sports, open sample data, https://github.com/metrica-sports/sample-data.
 
 **How the public 5 minutes were used.** Only as CHALLENGE.md and RULES.md permit: to read what
 the labels mean, and as a wiring check after a version was built. No parameter was tuned on it
@@ -284,10 +281,20 @@ transitions, §4.1) and a goal-line exit called live (→ the Law 9 constraint, 
 general mechanisms applied over the whole match, and both were judged on the ground-truth-free
 checks of §7.2, not on the public score.
 
-**How the video was used.** Watched and measured to inspect the tracking, as RULES.md allows,
-never labelled. The goalkeeper rule of §4.6 came from overlaying the tracking on frames; it is a
-general rule (a keeper defends his own goal), not tied to any frame, and its check
-(`kit_check.py`) is an algorithmic colour measurement anyone can rerun.
+**How the video was used.** Only watched, to understand the data and what counts as
+possession, which the clarified rules allow. The pipeline never reads it, and nothing is fitted
+to it or checked against it.
+
+**Compliance with the organisers' clarified rules.**
+
+| rule | this submission |
+|---|---|
+| no checking the output against the video | the pipeline never reads the video; a colour check on the video in an earlier version was removed when the rule was clarified |
+| no hand labels or other human-made data on the provided game | none; the only human labels used are Metrica's events on two other matches |
+| no training, fitting or calibrating on the ground truth or the video | nothing is: the public 5 minutes are read only by the optional `--check`, after the file is written; every per-match quantity is estimated at run time from the automatic tracking and tagging, without labels |
+| parameters tuned on external data only | the settings chosen by measurement (minimum stoppage 3 s, possession prior 12 s) were chosen on Metrica's matches; the other constants are stated physical or football priors, and structural choices were compared with automatic checks on the provided data, which the rules allow |
+| automatic checks on the provided data (allowed) | §7.2 |
+| rights to external data | Metrica's sample data is public on GitHub with no formal licence and asks that public use acknowledge the source, which §6 does; it is not redistributed (`other_games.py` downloads it) |
 
 ## 7. How it was evaluated
 
@@ -365,10 +372,9 @@ the broadcast fusion already recovered roughly a third of the cost.
   compare variants at the *same* prior, never to choose the prior. (Submissions that use the
   phase tags as input, like a tag-filled vote, score high on it by construction.) Final: 0.681.
   **It also inherits the tracking's team errors**: Smart Tagging is generated from the same
-  tracking, so a change that *corrects* team labels can lower it. The goalkeeper fix took it from
-  0.704 to 0.682 while the video shows that fix right 58 times in 60 (§4.6). It is therefore used
-  only for changes that add observations without relabelling anyone (§4.5), and the kit check
-  judges relabelling.
+  tracking, so a change that *corrects* team labels can lower it: the goalkeeper fix took it
+  from 0.704 to 0.682, although that fix follows from the tracking itself (§4.6). It is therefore
+  used only for changes that add observations without relabelling anyone (§4.5).
 * **Plausibility.** 289 possessions, mean 11.9 s, 21 shorter than 2 s; 139 stoppages, 45.7 %
   dead; home share 0.602. (Real matches have about 60 possessions under 2 s each: 61 and 62 in
   the sample games. A few short possessions are not a warning sign.)
@@ -396,7 +402,7 @@ next change happened to recover it. Neither move was a reason for anything.
   zone between a touch and control.
 * **Identity switches across teams** in the tracking produce confident wrong contact evidence.
   The large, systematic case (goalkeeper slots) is fixed (§4.6); outfield slots still carry
-  a ~1.7 % residual that a second tracker cannot arbitrate (§4.7).
+  some errors, which a second tracker cannot arbitrate (§4.7).
 * **The ball is untracked at many restarts** (corners, kick-offs), so restart timing falls back
   on collective acceleration; the broadcast adds a ball around 811 restart frames but, being a
   TV feed, often cuts away exactly then.
@@ -424,10 +430,6 @@ python evaluation/validate_submission.py evaluation/results/<team_name>.csv
 python possession/run.py --name <team_name> --check    # optional: public 5-minute wiring check
 python possession/run.py --name <team_name> --no-broadcast   # tactical tracking only
 
-# optional, validation only: the kit check of §4.6 (needs the tactical video and OpenCV)
-pip install opencv-python-headless==5.0.0.93
-python possession/kit_check.py                     # or --video path/to/BAR-ATH_tactical.mp4
-
 # optional: the validation of §7.1 on two other matches (downloads ~125 MB once, ~5 min)
 python possession/other_games.py --mean-possession 12 14
 python possession/other_games.py --ball-dropout 0.064   # robustness to BAR-ATH's ball loss
@@ -447,6 +449,5 @@ reproduces the same file.
 | `possession/model.py` | three-state model, self-trained proximity evidence, calibration, Laws 8–9, set-piece priors |
 | `possession/broadcast.py` | broadcast ↔ tactical alignment from the tracking; second ball track |
 | `possession/other_games.py` | validation on Metrica's two open sample matches: events → possession truth, official scorer |
-| `possession/kit_check.py` | optional: team labels vs jersey colours on the video (validation only) |
 | `possession/diagnostics.py` | ground-truth-free checks |
 | `possession/run.py` | the one command |
